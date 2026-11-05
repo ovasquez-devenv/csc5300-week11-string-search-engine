@@ -1,0 +1,235 @@
+"""Tests for KMP, Rabin Karp, suffix array, suffix tree, applications, and the facade."""
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from applications.autocomplete import Autocomplete
+from applications.dna_search import DNASearch
+from applications.plagiarism import (
+    highlight,
+    longest_common_substring,
+    overlapping_phrases,
+    similarity_score,
+)
+from core.kmp import compute_failure_function, kmp_search
+from core.rabin_karp import RabinKarp
+from core.search_engine import StringSearchEngine
+from core.suffix_array import binary_search, build_lcp, build_suffix_array
+from core.suffix_tree import SuffixTree
+from utils.rolling_hash import RollingHash
+from utils.text_loader import load_fasta
+
+FASTA = ROOT / "data" / "sample.fasta"
+
+
+def test_failure_ababab() -> None:
+    assert compute_failure_function("ABABD") == [0, 0, 1, 2, 0]
+
+
+def test_failure_aabaab() -> None:
+    assert compute_failure_function("AABAAB") == [0, 1, 0, 1, 2, 3]
+
+
+def test_failure_empty() -> None:
+    assert compute_failure_function("") == []
+
+
+def test_kmp_basic() -> None:
+    text = "ABABDABACDABABCABABA"
+    pattern = "ABABCABABA"
+    assert kmp_search(text, pattern) == [10]
+
+
+def test_kmp_repeated() -> None:
+    assert kmp_search("AAAAA", "AA") == [0, 1, 2, 3]
+
+
+def test_kmp_pattern_longer() -> None:
+    assert kmp_search("ABC", "ABCD") == []
+
+
+def test_kmp_empty_pattern() -> None:
+    assert kmp_search("ABC", "") == []
+
+
+def test_kmp_no_match() -> None:
+    assert kmp_search("ABCDEF", "XYZ") == []
+
+
+def test_kmp_pattern_at_start() -> None:
+    assert kmp_search("HELLO WORLD", "HELLO") == [0]
+
+
+def test_kmp_pattern_at_end() -> None:
+    assert kmp_search("HELLO WORLD", "WORLD") == [6]
+
+
+def test_kmp_overlapping_aaaa_aa() -> None:
+    assert kmp_search("AAAA", "AA") == [0, 1, 2]
+
+
+def test_rabin_karp_matches_kmp() -> None:
+    text = "the quick brown fox jumps over the lazy dog"
+    pattern = "the"
+    assert RabinKarp().search(text, pattern) == kmp_search(text, pattern)
+
+
+def test_rabin_karp_multiple() -> None:
+    text = "banana bandana"
+    hits = RabinKarp().search_multiple(text, ["ban", "ana"])
+    assert hits["ban"] == [0, 7]
+    assert 1 in hits["ana"]
+
+
+def test_rabin_karp_no_match() -> None:
+    assert RabinKarp().search("ABCDEF", "XYZ") == []
+
+
+def test_rabin_karp_pattern_at_start_and_end() -> None:
+    text = "CATS AND CATS"
+    assert RabinKarp().search(text, "CATS") == [0, 9]
+
+
+def test_rabin_karp_forced_collision() -> None:
+    """A small modulus produces a hash hit that fails the character check."""
+    rk = RabinKarp(modulus=3)
+    text = "ABCABC"
+    pattern = "XYZ"
+    positions = rk.search(text, pattern)
+    assert positions == []
+    assert rk.hash_hits > 0
+    assert rk.collisions > 0
+
+
+def test_rolling_hash_roll_matches_fresh() -> None:
+    hasher = RollingHash()
+    text = "ABCDEFGH"
+    window = "CDEF"
+    power = hasher.window_power(len(window))
+    start = hasher.hash_string(text[0:4])
+    rolled = hasher.roll(start, text[0], text[4], power)
+    assert rolled == hasher.hash_string(text[1:5])
+
+
+def test_suffix_array_banana() -> None:
+    text = "BANANA"
+    sa = build_suffix_array(text)
+    suffixes = [text[i:] for i in sa]
+    assert suffixes == sorted(suffixes)
+
+
+def test_lcp_and_search() -> None:
+    text = "ABABABAB"
+    sa = build_suffix_array(text)
+    lcp = build_lcp(text, sa)
+    assert len(lcp) == len(text) - 1
+    assert binary_search(text, sa, "ABAB") == kmp_search(text, "ABAB")
+
+
+def test_suffix_array_no_match() -> None:
+    text = "BANANA"
+    sa = build_suffix_array(text)
+    assert binary_search(text, sa, "XYZ") == []
+
+
+def test_suffix_tree_substring_and_count() -> None:
+    text = "BANANA"
+    tree = SuffixTree(text)
+    assert tree.find_substring("ANA")
+    assert not tree.find_substring("XYZ")
+    assert tree.count_distinct_substrings() > 0
+    repeated = tree.longest_repeated_substring()
+    assert repeated in text
+
+
+def test_suffix_tree_prefix() -> None:
+    tree = SuffixTree("BANANA")
+    prefixes = tree.find_prefix("ANA")
+    assert any(item.startswith("ANA") for item in prefixes)
+
+
+def test_engine_all_methods_agree() -> None:
+    text = "the cat sat on the mat"
+    pattern = "the"
+    engine = StringSearchEngine(text)
+    expected = kmp_search(text, pattern)
+    for method in ("kmp", "rk", "sa", "tree"):
+        result = engine.find(pattern, method=method)
+        assert result.positions == expected
+        assert result.match_count == len(expected)
+        assert result.method == method
+
+
+def test_engine_no_match() -> None:
+    engine = StringSearchEngine("ABCDEF")
+    for method in ("kmp", "rk", "sa", "tree"):
+        result = engine.find("XYZ", method=method)
+        assert result.positions == []
+        assert result.match_count == 0
+
+
+def test_engine_overlapping() -> None:
+    engine = StringSearchEngine("AAAA")
+    expected = [0, 1, 2]
+    for method in ("kmp", "rk", "sa", "tree"):
+        assert engine.find("AA", method=method).positions == expected
+
+
+def test_engine_start_and_end() -> None:
+    engine = StringSearchEngine("START middle END")
+    assert engine.find("START", method="kmp").positions == [0]
+    assert engine.find("END", method="rk").positions == [13]
+
+
+def test_plagiarism_overlap_and_lcs() -> None:
+    a = "the quick brown fox jumps"
+    b = "a quick brown fox ran"
+    phrases = overlapping_phrases(a, b, phrase_len=5)
+    assert any("quick" in p or "brown" in p for p in phrases)
+    lcs = longest_common_substring(a, b)
+    assert "quick brown fox" in lcs or len(lcs) >= 5
+    score = similarity_score(a, b, phrase_len=5)
+    assert 0.0 < score <= 100.0
+
+
+def test_plagiarism_highlight() -> None:
+    out = highlight("the quick brown", ["quick"])
+    assert "[quick]" in out
+
+
+def test_dna_from_fasta() -> None:
+    searcher = DNASearch.from_fasta(FASTA)
+    assert "ACGT" in searcher.sequence
+    positions = searcher.find_motif("ACGT")
+    assert positions
+    assert searcher.has_motif("ACGT")
+    assert searcher.motif_count("ACGT") == len(positions)
+
+
+def test_dna_no_motif() -> None:
+    searcher = DNASearch.from_fasta(FASTA)
+    assert searcher.find_motif("NNNN") == []
+    assert not searcher.has_motif("NNNN")
+
+
+def test_autocomplete_top_k() -> None:
+    words = ["cat", "car", "card", "dog", "cat", "car", "car"]
+    ac = Autocomplete(words)
+    hits = ac.complete("ca", top_k=2)
+    assert hits[0] == ("car", 3)
+    assert hits[1][0] == "cat" or hits[1][0] == "card"
+
+
+def test_autocomplete_empty_prefix() -> None:
+    ac = Autocomplete(["alpha", "beta"])
+    hits = ac.complete("", top_k=5)
+    assert len(hits) == 2
+
+
+def test_fasta_loader_skips_header() -> None:
+    seq = load_fasta(FASTA)
+    assert not seq.startswith(">")
+    assert seq == seq.upper()
