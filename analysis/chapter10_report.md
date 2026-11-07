@@ -8,7 +8,7 @@ CSC 5300 Week 11
 
 This project implements four ways to find a pattern inside a text: Knuth Morris Pratt (KMP), Rabin Karp, a suffix array, and a compressed suffix tree. KMP is the default for one pattern. It preprocesses the pattern into a failure table and never moves backward in the text. Rabin Karp hashes a sliding window and is the better fit when many patterns share one pass. The suffix array and the suffix tree cost more to build and pay off when the same text is queried many times.
 
-The code lives in a Python package named StringSearchEngine. Tests cover the failure table, repeated characters, a pattern longer than the text, hash collisions that must be verified, suffix array order, and tree queries. Benchmarks use a fixed seed of 5300 and report the mean and the standard deviation. The timing numbers in the analysis section were measured on this machine using the seeded benchmark.
+The code lives in a Python package named StringSearchEngine. Tests cover the failure table, repeated characters, a pattern longer than the text, hash collisions that must be verified, suffix array order, and tree queries. Seed 5300 produced the combined times below on this PC. Preprocessing time, search latency, tracemalloc peak, and collision rate are copied from metrics.csv after this PC runs the updated script.
 
 ## String matching complexity
 
@@ -32,9 +32,7 @@ search_engine.py is the facade. StringSearchEngine(text).find(pattern, method) a
 
 ## Benchmark analysis
 
-The script benchmarks/benchmark_search.py builds a 10 KB text and a 1 MB text with seed 5300. It times KMP, Rabin Karp, and the suffix array on both sizes. The suffix tree is timed on the small text only, because the compressed trie is heavier to build. Each method is run three times. The script writes the mean and the standard deviation to benchmarks/results/runtime.csv and draws four charts: runtime_comparison.png, collision_analysis.png, sa_lcp_stats.png, and heatmap_dataset_sizes.png.
-
-Measured results from this PC are shown below. Each value summarizes three runs with seed 5300.
+The table is the earlier run on this PC: one timer on the whole call, three repeats, seed 5300, pattern search, generator random.Random. Mean is statistics.mean. Standard deviation is statistics.pstdev, the population kind, dividing by the repeat count. The file is benchmarks/results/runtime.csv, and this run left out the 1 MB trie.
 
 | Dataset | Method | Mean seconds | Std seconds |
 | --- | --- | --- | --- |
@@ -46,7 +44,21 @@ Measured results from this PC are shown below. Each value summarizes three runs 
 | 1 MB | rk | 0.233437 | 0.007826 |
 | 1 MB | sa | 6.761709 | 0.079170 |
 
-The collision chart varies the modulus over 101, 1009, 10007, and 100003 on a seeded random text. A smaller modulus produces more hash hits that fail the character check. A larger prime cuts that rate. The LCP chart plots adjacent suffix overlap on a 2,000 character sample. The heatmap compares mean time across dataset size and method.
+metrics.csv is new. runtime.csv stays as the table. Preprocessing and search use separate timers, and tracemalloc is stopped for both. KMP builds the failure table, then scans. Rabin Karp hashes the pattern and computes the window power, then slides and checks characters. The suffix array uses build_suffix_array, then binary_search. The LCP array is for its chart, outside those timers. The trie inserts every suffix, then find_substring answers yes or no. The other searches return positions. Each phase runs three times. The search timer starts after the structure exists.
+
+Memory comes afterward. Garbage collection runs, then tracemalloc records the peak bytes Python allocated in that call. The build peak includes the structure. The search peak is the query. Quote columns ending in tracemalloc_peak_mean_bytes, since a Task Manager figure measures something else.
+
+Collision rate is collisions divided by hash hits, from the library at modulus 1000000007. No hash hits stores 0, and the rate can stay 0 when search really occurs. The collision chart uses moduli 101, 1009, 10007, and 100003 on 20,000 random characters, stored in collision_rates.csv. The LCP sample has 2,000 characters. The chart files stay runtime_comparison.png, collision_analysis.png, sa_lcp_stats.png, and heatmap_dataset_sizes.png. The bar chart shows both phases on the small text. The heatmap is mean search latency, and a skipped method stays off it. Current PNG files come from that same run.
+
+Lengths are 10,000 and 1,000,000 characters. Medium is the low end of the 1 MB to 5 MB range. The trie runs at both lengths. tree max chars defaults to 1000000. A longer text skips the trie, and the note states the length and the limit, because the trie keeps suffixes as Python objects. KMP, Rabin Karp, and the suffix array still run at that longer length.
+
+From the project root with Python 3.14:
+
+```
+py -3.14 -m benchmarks.benchmark_search
+```
+
+Paste the means under the table. The README lists the save steps.
 
 ## Trade offs
 
@@ -56,7 +68,7 @@ Rabin Karp spends its advantage on many patterns. A single pattern is often no f
 
 The suffix array is the better long term structure when the text is fixed and the patterns vary. The O(n log n) build is the cost. After that, each query is a binary search. The LCP array also supports longest common substring between two documents, which the plagiarism application uses.
 
-The compressed trie answers substring and prefix questions directly and can count distinct substrings from edge lengths. It uses more memory than the suffix array and is slower to build in this straightforward implementation. For a one time search it is the wrong tool.
+The compressed trie answers substring and prefix questions directly and can count distinct substrings from edge lengths. On the 10 KB combined timer the trie took longer than the suffix array. For a one time search the trie is the wrong tool.
 
 ## Applications
 
@@ -68,7 +80,7 @@ autocomplete.py stores word frequencies and returns the top k completions for a 
 
 ## Conclusion
 
-KMP is the right default for one pattern. Rabin Karp is the right tool for a set of patterns. A suffix array or a compressed trie is the right tool when one text will be queried many times. The project implements all four, tests the edge cases from the chapter, and reports a seeded benchmark run on this machine so every timing number in the final report is measured, not assumed.
+KMP is the right default for one pattern. Rabin Karp is the right tool for a set of patterns. A suffix array or a compressed trie is the right tool when one text will be queried many times. The project implements all four and tests the edge cases from the chapter. The combined table was measured on this PC. Split metrics are added from metrics.csv after this PC runs the updated script.
 
 ## Source
 
