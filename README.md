@@ -32,19 +32,13 @@ py -3.14 -m pip install -r requirements.txt
 py -3.14 -m benchmarks.benchmark_search
 ```
 
-The current PC measurement is benchmarks/results/final_run. benchmarks/results/runtime.csv is the older combined run. benchmarks/results/pending_rerun is the earlier split run. A benchmark refuses to write into a folder that already has measurement files, and it does not create a nested folder. Do not pass --allow-replace.
+benchmarks/results/runtime.csv is the older combined run. benchmarks/results/pending_rerun is an earlier split run. KMP, Rabin Karp, the trie, and collisions in the report come from benchmarks/results/final_run. The suffix array cells come from benchmarks/results/sa_final. The pictures that match those current cells are benchmarks/results/current_figures. A benchmark refuses to write into a folder that already has measurement files, and it does not create a nested folder. Do not pass --allow-replace. Do not rerun the benchmark.
 
 Every search, including the trie, returns the list of starting positions. Chart titles name the generator, the seed, the pattern, and the quantity. The collision chart uses a separate random ACGT text. The LCP chart is one build on a 2,000 character englishish sample.
 
 ## Charts already measured
 
-The report uses benchmarks/results/final_run for every current row except the suffix array setup means. Those setup means are the earlier comparison sort. After pulling, remeasure only the suffix array into an empty folder:
-
-```
-py -3.14 -m benchmarks.benchmark_search --methods sa --output-dir benchmarks\results\sa_final
-```
-
-Do not pass --allow-replace. Leave runtime.csv, final_run, and pending_rerun unchanged. The new note should say radix-doubling-v1. Copy only the suffix array setup cells into the report after that file exists.
+Leave runtime.csv, final_run, pending_rerun, sa_final, and current_figures unchanged. Do not rerun the benchmark.
 
 ## What the metric names mean
 

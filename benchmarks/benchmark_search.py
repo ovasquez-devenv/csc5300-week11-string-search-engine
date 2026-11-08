@@ -513,6 +513,7 @@ def _draw_runtime_chart(
     seed: int,
     repeats: int,
     pattern: str,
+    note: str = "",
 ) -> None:
     methods = [method for method in METHODS if method in small_rows]
     fig, ax = plt.subplots()
@@ -537,14 +538,19 @@ def _draw_runtime_chart(
         )
         ax.set_xticks(indexes, methods)
         ax.legend()
-    ax.set_title(runtime_chart_title(small, seed, repeats, pattern), fontsize=9)
+    title = runtime_chart_title(small, seed, repeats, pattern)
+    if note:
+        title = title + "\n" + note
+    ax.set_title(title, fontsize=9)
     ax.set_ylabel("Mean seconds from this run")
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
 
 
-def _draw_collision_chart(path: Path, rows: list[dict[str, str]], seed: int, repeats: int) -> None:
+def _draw_collision_chart(
+    path: Path, rows: list[dict[str, str]], seed: int, repeats: int, note: str = ""
+) -> None:
     text_size = int(rows[0]["text_size"]) if rows else 0
     fig, ax = plt.subplots()
     ax.bar(
@@ -552,7 +558,10 @@ def _draw_collision_chart(path: Path, rows: list[dict[str, str]], seed: int, rep
         [float(row["collision_rate_mean"]) for row in rows],
         color="#c47b2b",
     )
-    ax.set_title(collision_chart_title(text_size, seed, repeats), fontsize=9)
+    title = collision_chart_title(text_size, seed, repeats)
+    if note:
+        title = title + "\n" + note
+    ax.set_title(title, fontsize=9)
     ax.set_ylabel("Mean collisions / hash hits")
     fig.tight_layout()
     fig.savefig(path)
@@ -580,6 +589,7 @@ def _draw_heatmap(
     seed: int,
     repeats: int,
     pattern: str,
+    note: str = "",
 ) -> None:
     by_dataset = {label: _completed(rows, label) for label, _size in datasets}
     methods = [
@@ -600,7 +610,10 @@ def _draw_heatmap(
             [f"{size} chars" for _label, size in datasets],
         )
         fig.colorbar(image, ax=ax, label="mean search seconds")
-    ax.set_title(heatmap_chart_title(seed, repeats, pattern), fontsize=9)
+    title = heatmap_chart_title(seed, repeats, pattern)
+    if note:
+        title = title + "\n" + note
+    ax.set_title(title, fontsize=9)
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
