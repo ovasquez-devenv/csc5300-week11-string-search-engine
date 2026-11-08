@@ -2,15 +2,62 @@
 
 The suffix array lists starting positions of all suffixes in sorted order.
 The LCP array stores the longest common prefix length of adjacent suffixes.
+
+Each doubling round sorts integer rank pairs with a stable radix sort.
+A counting sort is linear in the number of suffixes, and there are O(log n)
+rounds, so the build is O(n log n). A comparison sort each round would be
+O(n log n) per round and O(n log^2 n) overall.
 """
 
 from __future__ import annotations
 
+BUILD_ID = "radix-doubling-v1"
+
+
+def _counting_sort(items: list[int], key, max_key: int) -> list[int]:
+    """Stable sort. key(item) must be an int in 0..max_key."""
+    counts = [0] * (max_key + 1)
+    for item in items:
+        counts[key(item)] += 1
+    total = 0
+    for index, count in enumerate(counts):
+        counts[index] = total
+        total += count
+    ordered = [0] * len(items)
+    for item in items:
+        slot = key(item)
+        ordered[counts[slot]] = item
+        counts[slot] += 1
+    return ordered
+
+
+def _radix_sort_pairs(sa: list[int], rank: list[int], k: int, n: int) -> list[int]:
+    """Sort suffixes by (rank[i], rank[i+k]) using two counting passes.
+
+    The second half sorts first so the following pass on the first half keeps
+    that order when the first ranks tie.
+    """
+    max_rank = 0
+    for value in rank:
+        if value > max_rank:
+            max_rank = value
+
+    def second(index: int) -> int:
+        return rank[index + k] + 1 if index + k < n else 0
+
+    def first(index: int) -> int:
+        return rank[index]
+
+    by_second = _counting_sort(sa, second, max_rank + 1)
+    return _counting_sort(by_second, first, max_rank)
+
 
 def build_suffix_array(text: str) -> list[int]:
-    """Build a suffix array with the prefix doubling method.
+    """Build a suffix array with prefix doubling and radix sort each round.
 
     Time is O(n log n). Returns starting indices of suffixes in sorted order.
+    Equal suffixes keep the earlier index because the radix sort is stable
+    and the initial order is 0, 1, 2, and so on.
     """
     n = len(text)
     if n == 0:
@@ -19,7 +66,7 @@ def build_suffix_array(text: str) -> list[int]:
     rank = [ord(ch) for ch in text]
     k = 1
     while k < n:
-        sa.sort(key=lambda i: (rank[i], rank[i + k] if i + k < n else -1))
+        sa = _radix_sort_pairs(sa, rank, k, n)
         new_rank = [0] * n
         for i in range(1, n):
             prev = sa[i - 1]

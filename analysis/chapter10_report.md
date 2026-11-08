@@ -76,7 +76,7 @@ dataset method setup_peak_mean setup_peak_std search_peak_mean search_peak_std
 1MB tree 271656049.333 9.978 560328 0
 ```
 
-The first table used one clock for both phases, so it is a different measurement from a setup cell plus a search cell. KMP setup is a few microseconds and its std is about as large as the mean, so that clock is noisy. The large peaks are the 1 MB suffix array and the 1 MB trie.
+The first table used one clock for both phases, so it is a different measurement from a setup cell plus a search cell. KMP setup is a few microseconds and its std is about as large as the mean, so that clock is noisy. The large peaks are the 1 MB suffix array and the 1 MB trie. Suffix array setup means in that table are the earlier comparison sort. radix-doubling-v1 is not those cells.
 
 The collision rate is collisions divided by hash hits. It is the share of hash hits that failed the character check. Windows with no hash hit stay outside the rate. Modulus 1000000007 gave 129 hits and 0 collisions on 10 KB, and 12506 hits and 0 collisions on 1 MB, so both rates are 0. The std is 0 because the three repeats used the same seeded text. That 0 is the spread of this run.
 
@@ -92,7 +92,7 @@ modulus hash_hits collisions rate rate_std
 
 A smaller modulus fails the character check more often. That rate std is also 0, from repeating the seeded text. The LCP chart is one deterministic 2000 character englishish sample, seed 5300, and it is not a timed row.
 
-Charts for these tables are in benchmarks/results/final_run. Files directly in benchmarks/results, and the pending_rerun folder, are earlier drawings.
+Charts for these tables are in benchmarks/results/final_run. KMP fallback steps and the Rabin Karp base table are in analysis/demonstrations.md.
 
 ## Trade offs
 

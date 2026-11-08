@@ -73,6 +73,26 @@ def test_kmp_overlapping_aaaa_aa() -> None:
     assert kmp_search("AAAA", "AA") == [0, 1, 2]
 
 
+def test_kmp_periodic_abab() -> None:
+    assert compute_failure_function("ABAB") == [0, 0, 1, 2]
+    assert kmp_search("ABABABAB", "ABAB") == [0, 2, 4]
+
+
+def test_kmp_mismatch_falls_back_through_failure_table() -> None:
+    from core.kmp import kmp_fallback_trace
+
+    steps = kmp_fallback_trace("ABABABAB", "ABAC")
+    assert steps
+    fallback = steps[0]
+    assert fallback["text_index"] == 3
+    assert fallback["text_char"] == "B"
+    assert fallback["pattern_char"] == "C"
+    assert fallback["from_index"] == 3
+    assert fallback["to_index"] == 1
+    assert fallback["from_index"] > fallback["to_index"]
+    assert kmp_search("ABABABAB", "ABAC") == []
+
+
 def test_rabin_karp_matches_kmp() -> None:
     text = "the quick brown fox jumps over the lazy dog"
     pattern = "the"
@@ -93,6 +113,34 @@ def test_rabin_karp_no_match() -> None:
 def test_rabin_karp_pattern_at_start_and_end() -> None:
     text = "CATS AND CATS"
     assert RabinKarp().search(text, "CATS") == [0, 9]
+
+
+def test_saved_demonstration_matches_the_code() -> None:
+    from demonstrations.kmp_rk_demo import render
+
+    saved = (ROOT / "analysis" / "demonstrations.md").read_text(encoding="utf-8")
+    assert saved == render()
+    assert "falls back from 3 to 1" in saved
+    assert "3 17 3 2" in saved
+
+
+def test_rabin_karp_base_changes_collisions_but_not_matches() -> None:
+    text = "ABCABCXYZABCABC"
+    pattern = "XYZ"
+    verified = kmp_search(text, pattern)
+    rates = []
+    for base in (2, 3, 256):
+        for modulus in (17, 101, 1_000_000_007):
+            matcher = RabinKarp(base=base, modulus=modulus)
+            positions = matcher.search(text, pattern)
+            assert positions == verified
+            assert matcher.collisions <= matcher.hash_hits
+            if matcher.hash_hits:
+                rates.append(matcher.collisions / matcher.hash_hits)
+            else:
+                rates.append(0.0)
+    assert any(rate > 0 for rate in rates)
+    assert rates[-1] == 0.0
 
 
 def test_rabin_karp_forced_collision() -> None:
@@ -137,6 +185,59 @@ def test_suffix_array_no_match() -> None:
     assert binary_search(text, sa, "XYZ") == []
 
 
+def _naive_suffix_array(text: str) -> list[int]:
+    return sorted(range(len(text)), key=lambda index: text[index:])
+
+
+def _naive_lcp(text: str, sa: list[int]) -> list[int]:
+    values = []
+    for left, right in zip(sa, sa[1:]):
+        length = 0
+        while (
+            left + length < len(text)
+            and right + length < len(text)
+            and text[left + length] == text[right + length]
+        ):
+            length += 1
+        values.append(length)
+    return values
+
+
+def test_suffix_array_matches_full_string_order() -> None:
+    samples = [
+        "BANANA",
+        "AAA",
+        "ABABABAB",
+        "abcabc",
+        "café",
+        "αβγαβγ",
+        "a🙂a🙂",
+        "",
+        "a",
+    ]
+    for text in samples:
+        sa = build_suffix_array(text)
+        assert sa == _naive_suffix_array(text)
+        assert build_lcp(text, sa) == _naive_lcp(text, sa)
+        if text:
+            pattern = text[:2] if len(text) >= 2 else text
+            assert binary_search(text, sa, pattern) == kmp_search(text, pattern)
+
+
+def test_suffix_array_tie_order_is_stable() -> None:
+    text = "AAA"
+    assert build_suffix_array(text) == [2, 1, 0]
+    assert build_lcp(text, build_suffix_array(text)) == [1, 2]
+
+
+def test_radix_sort_keeps_equal_keys_in_input_order() -> None:
+    from core.suffix_array import _counting_sort
+
+    items = [0, 1, 2, 3]
+    ordered = _counting_sort(items, lambda index: 0, 0)
+    assert ordered == [0, 1, 2, 3]
+
+
 def test_suffix_tree_substring_and_count() -> None:
     text = "BANANA"
     tree = SuffixTree(text)
@@ -145,6 +246,14 @@ def test_suffix_tree_substring_and_count() -> None:
     assert tree.count_distinct_substrings() > 0
     repeated = tree.longest_repeated_substring()
     assert repeated in text
+
+
+def test_suffix_tree_exact_banana_properties() -> None:
+    tree = SuffixTree("BANANA")
+    assert tree.longest_repeated_substring() == "ANA"
+    assert tree.count_distinct_substrings() == 15
+    assert sorted(tree.find_prefix("ANA")) == ["ANA", "ANANA"]
+    assert tree.find_positions("ANA") == [1, 3]
 
 
 def test_suffix_tree_prefix() -> None:

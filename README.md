@@ -38,7 +38,13 @@ Every search, including the trie, returns the list of starting positions. Chart 
 
 ## Charts already measured
 
-The report uses benchmarks/results/final_run/metrics.csv, collision_rates.csv, and the four PNG files in that folder. Leave runtime.csv, pending_rerun, and the older files directly in benchmarks/results unchanged. Do not rerun the benchmark.
+The report uses benchmarks/results/final_run for every current row except the suffix array setup means. Those setup means are the earlier comparison sort. After pulling, remeasure only the suffix array into an empty folder:
+
+```
+py -3.14 -m benchmarks.benchmark_search --methods sa --output-dir benchmarks\results\sa_final
+```
+
+Do not pass --allow-replace. Leave runtime.csv, final_run, and pending_rerun unchanged. The new note should say radix-doubling-v1. Copy only the suffix array setup cells into the report after that file exists.
 
 ## What the metric names mean
 

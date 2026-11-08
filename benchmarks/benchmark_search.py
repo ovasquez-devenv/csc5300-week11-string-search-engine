@@ -42,6 +42,7 @@ import matplotlib.pyplot as plt
 
 from core.kmp import compute_failure_function
 from core.rabin_karp import RabinKarp
+from core.suffix_array import BUILD_ID as SA_BUILD_ID
 from core.suffix_array import binary_search, build_lcp, build_suffix_array
 from core.suffix_tree import SuffixTree
 from utils.generators import englishish, random_text
@@ -310,8 +311,11 @@ def _fmt_rate(value: float) -> str:
 def _method_note(method: str) -> str:
     if method == "sa":
         return (
-            "Preprocess times build_suffix_array. Search times binary_search on that array. "
-            "The LCP array is built for the LCP chart."
+            f"Preprocess times build_suffix_array ({SA_BUILD_ID}). "
+            "Each doubling round is a linear radix sort, so the build is O(n log n). "
+            "Search times binary_search on that array. "
+            "The LCP array is built for the LCP chart. "
+            "Not the comparison-sort rows in final_run/metrics.csv."
         )
     if method == "tree":
         return (

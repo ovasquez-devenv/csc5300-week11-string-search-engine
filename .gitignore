@@ -8,6 +8,7 @@ venv/
 !benchmarks/results/*.png
 !benchmarks/results/pending_rerun/*.png
 !benchmarks/results/final_run/*.png
+!benchmarks/results/sa_final/*.png
 data/generated/
 .idea/
 .vscode/
