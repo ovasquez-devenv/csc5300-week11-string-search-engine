@@ -32,9 +32,15 @@ py -3.14 -m pip install -r requirements.txt
 py -3.14 -m benchmarks.benchmark_search
 ```
 
-The saved files in benchmarks/results are the earlier PC run. A new run is sent to benchmarks/results/pending_rerun when those files are present, so runtime.csv, metrics.csv, collision_rates.csv, and the four PNG files stay put.
+The saved files in benchmarks/results and benchmarks/results/pending_rerun stay where they are. A benchmark refuses to write into a folder that already has those measurement files, and it does not create a nested pending_rerun folder. The corrected full run uses a new empty folder:
 
-The trie is Ukkonen's compressed trie and the full PC run is already in benchmarks/results/pending_rerun. Do not rerun it. The four PNG files were missing from that commit because .gitignore ignores *.png and only un-ignores benchmarks/results/*.png, not the pending_rerun folder. Charts can be drawn from the saved CSV with no new timing:
+Do not point that command at benchmarks/results or benchmarks/results/pending_rerun. The trie setup times in pending_rerun include freeing the tree. The corrected clock is a full run, not a trie-only rerun:
+
+```
+py -3.14 -m benchmarks.benchmark_search --output-dir benchmarks\results\final_run
+```
+
+The four PNG files were missing from the pending_rerun commit because .gitignore ignored *.png except benchmarks/results/*.png. Charts of the saved pending_rerun CSV, with no new timing, are:
 
 ```
 py -3.14 -m benchmarks.benchmark_search --plot-only --metrics benchmarks/results/pending_rerun/metrics.csv --collisions benchmarks/results/pending_rerun/collision_rates.csv

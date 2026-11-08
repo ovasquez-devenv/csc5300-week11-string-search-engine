@@ -46,7 +46,7 @@ The first table is the earlier whole call on this PC: three repeats, seed 5300, 
 
 The current rows are benchmarks/results/pending_rerun/metrics.csv from this PC, Python 3.14.7, seed 5300, pattern search, and three repeats. All eight rows are ok, including the 1000000 character Ukkonen trie. 10 KB is 10000 characters and 1 MB is 1000000 characters. The benchmark script times three builds and three lookups. engine.find is different: one setup, then the mean of three searches in search_time. Tracemalloc was stopped during the timers. Memory came later, after garbage collection, as the peak bytes Python allocated in that call. Setup peak includes the build. Search peak is the query. A Task Manager figure is a different measurement.
 
-KMP setup is the failure table, and the search scans the text. Rabin Karp setup is the pattern hash and the window power, and the search slides the window. Suffix array setup builds the array, and the search is binary search. The LCP array stays in its own chart. Trie setup is the Ukkonen build, and the trie search lists every starting position.
+KMP setup is the failure table, and the search scans the text. Rabin Karp setup is the pattern hash and the window power, and the search slides the window. Suffix array setup builds the array, and the search is binary search. The LCP array stays in its own chart. Trie setup is the Ukkonen build, and the trie search lists every starting position. The trie setup means below also include freeing the tree, because that clock dropped the object before it stopped. Those setup cells are not the build alone.
 
 Current split times, in seconds, from pending_rerun/metrics.csv:
 
@@ -92,7 +92,7 @@ modulus hash_hits collisions rate rate_std
 
 A smaller modulus fails the character check more often. That rate std is also 0, from repeating the seeded text. The LCP chart is one deterministic 2000 character englishish sample, seed 5300, and it is not a timed row.
 
-The four charts for these tables are in benchmarks/results/pending_rerun. The bar chart is setup beside search on 10 KB, with the trie. The heatmap is mean search time for all four methods. The PNG files directly in benchmarks/results are an earlier drawing, not these tables.
+Charts for these tables are in benchmarks/results/pending_rerun. Files directly in benchmarks/results are an earlier drawing.
 
 ## Trade offs
 
@@ -102,7 +102,7 @@ Rabin Karp pays off when many patterns share a pass. One pattern is often no fas
 
 The suffix array fits a fixed text and many patterns. The O(n log n) build is the cost, and each later query is a binary search. The LCP array also feeds the plagiarism longest common substring.
 
-At 1 MB the Ukkonen setup mean is 3.988564000 seconds, under the suffix array, and the search mean is 0.010692567 seconds. The build still dominates a one time search.
+At 1 MB the recorded trie setup mean is 3.988564000 seconds and the search mean is 0.010692567 seconds. The setup figure includes freeing the tree.
 
 ## Applications
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import sys
+import time
 import tracemalloc
 from pathlib import Path
 
@@ -183,8 +184,6 @@ def test_historical_runtime_csv_values_stay() -> None:
 
 
 def test_smoke_run_writes_separated_metrics(tmp_path: Path) -> None:
-    sentinel = tmp_path / "runtime.csv"
-    sentinel.write_text("keep\n", encoding="utf-8")
     before = RUNTIME_CSV.read_bytes()
     paths = run(
         output_dir=tmp_path,
@@ -197,7 +196,6 @@ def test_smoke_run_writes_separated_metrics(tmp_path: Path) -> None:
         collision_text_size=400,
         lcp_sample_size=80,
     )
-    assert sentinel.read_text(encoding="utf-8") == "keep\n"
     assert RUNTIME_CSV.read_bytes() == before
     with paths["metrics"].open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
@@ -230,7 +228,6 @@ def test_smoke_run_writes_separated_metrics(tmp_path: Path) -> None:
         chart = paths["metrics"].parent / name
         assert chart.is_file()
         assert chart.stat().st_size > 1000
-        assert not (tmp_path / name).exists()
     with paths["collisions"].open(newline="", encoding="utf-8") as handle:
         collision_rows = list(csv.DictReader(handle))
     assert list(collision_rows[0]) == COLLISION_FIELDS
@@ -368,26 +365,41 @@ def test_chart_titles_name_measurement_and_source() -> None:
     assert "every size" in heatmap
 
 
+def test_elapsed_stops_before_the_destructor_runs() -> None:
+    released: list[float] = []
+
+    class SlowDeath:
+        def __del__(self) -> None:
+            released.append(time.perf_counter())
+            time.sleep(0.05)
+
+    start = time.perf_counter()
+    elapsed = bench._elapsed(lambda: SlowDeath())
+    finished = time.perf_counter()
+    assert elapsed < 0.03
+    assert released
+    assert start + elapsed <= released[0] <= finished
+
+
 def test_saved_measurement_files_are_not_replaced(tmp_path: Path) -> None:
     sentinel = "keep-omar-metrics\n"
     (tmp_path / "metrics.csv").write_text(sentinel, encoding="utf-8")
     (tmp_path / "runtime.csv").write_text("keep-runtime\n", encoding="utf-8")
-    paths = run(
-        output_dir=tmp_path,
-        small=40,
-        medium=80,
-        repeats=1,
-        methods=("kmp",),
-        tree_max_chars=1_000_000,
-        text_max_chars=1_000_000,
-        collision_text_size=80,
-        lcp_sample_size=20,
-    )
+    with pytest.raises(ValueError, match="final_run"):
+        run(
+            output_dir=tmp_path,
+            small=40,
+            medium=80,
+            repeats=1,
+            methods=("kmp",),
+            tree_max_chars=1_000_000,
+            text_max_chars=1_000_000,
+            collision_text_size=80,
+            lcp_sample_size=20,
+        )
     assert (tmp_path / "metrics.csv").read_text(encoding="utf-8") == sentinel
     assert (tmp_path / "runtime.csv").read_text(encoding="utf-8") == "keep-runtime\n"
-    assert paths["metrics"].parent == tmp_path / "pending_rerun"
-    assert paths["metrics"].is_file()
-    assert "collisions" not in paths
+    assert not (tmp_path / "pending_rerun").exists()
 
 
 def test_plot_from_saved_does_not_rewrite_csv_or_historical_charts(tmp_path: Path) -> None:

@@ -219,11 +219,19 @@ def method_character_limit(
 
 
 def _elapsed(fn) -> float:
+    """Time fn without counting CPython's free of its return value.
+
+    The temporary result of a bare call is destroyed before the next line.
+    For a suffix array or a trie that free is part of teardown, not the build,
+    so the result stays bound until the clock has stopped.
+    """
     if tracemalloc.is_tracing():
         raise RuntimeError("timers run with tracemalloc stopped")
     start = time.perf_counter()
-    fn()
-    return time.perf_counter() - start
+    result = fn()
+    elapsed = time.perf_counter() - start
+    del result
+    return elapsed
 
 
 def time_prepare(method: str, text: str, pattern: str, repeats: int) -> tuple[float, float]:
@@ -622,7 +630,7 @@ def run(
     unknown = [name for name in methods if name not in METHODS]
     if unknown or not methods:
         raise ValueError("methods must be chosen from kmp, rk, sa, tree")
-    destination = resolve_output_dir(
+    destination, replaced = resolve_output_dir(
         RESULTS if output_dir is None else Path(output_dir),
         allow_replace=allow_replace,
     )
@@ -668,28 +676,34 @@ def run(
     print(f"Wrote {metrics_path}")
     if "collisions" in written:
         print(f"Wrote {written['collisions']}")
-    print("Saved PC measurement files were not replaced.")
+    if replaced:
+        print(f"Replaced existing measurement files in {destination}.")
+    else:
+        print(f"Wrote measurement files to {destination}.")
     for row in rows:
         if row["status"] == "skipped":
             print(f"Skipped {row['dataset']} {row['method']}: {row['note']}")
     return written
 
 
-def resolve_output_dir(destination: Path, allow_replace: bool) -> Path:
-    """Keep saved PC measurements in place unless replacement is requested."""
+def resolve_output_dir(destination: Path, allow_replace: bool) -> tuple[Path, bool]:
+    """Return the folder to write, and whether that folder already had results.
+
+    A folder that already holds measurement files is refused. The run does not
+    create a nested pending_rerun directory, and it does not overwrite those
+    files unless allow_replace is true.
+    """
     destination = Path(destination)
-    if allow_replace:
-        destination.mkdir(parents=True, exist_ok=True)
-        return destination
+    destination.mkdir(parents=True, exist_ok=True)
     protected = [name for name in PROTECTED_RESULTS if (destination / name).exists()]
-    if not protected:
-        destination.mkdir(parents=True, exist_ok=True)
-        return destination
-    pending = destination / "pending_rerun"
-    pending.mkdir(parents=True, exist_ok=True)
-    print("Left these saved files unchanged: " + ", ".join(protected))
-    print(f"Writing this run to {pending}")
-    return pending
+    if protected and not allow_replace:
+        names = ", ".join(protected)
+        raise ValueError(
+            f"Refusing to write into {destination} because it already has {names}. "
+            "Use an empty folder such as benchmarks/results/final_run. "
+            "Pass --allow-replace only to overwrite those files."
+        )
+    return destination, bool(protected)
 
 
 def plot_from_saved(
