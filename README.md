@@ -34,23 +34,23 @@ py -3.14 -m benchmarks.benchmark_search
 
 The saved files in benchmarks/results are the earlier PC run. A new run is sent to benchmarks/results/pending_rerun when those files are present, so runtime.csv, metrics.csv, collision_rates.csv, and the four PNG files stay put.
 
-The trie is now Ukkonen's compressed trie and is measured through 1,000,000 characters. KMP, Rabin Karp, and the suffix array keep that same limit. Only the trie rows in the saved metrics.csv are from the older insertion trie. Remeasure just the trie, without touching the saved files:
+The trie is Ukkonen's compressed trie and the full PC run is already in benchmarks/results/pending_rerun. Do not rerun it. The four PNG files were missing from that commit because .gitignore ignores *.png and only un-ignores benchmarks/results/*.png, not the pending_rerun folder. Charts can be drawn from the saved CSV with no new timing:
 
 ```
-py -3.14 -m benchmarks.benchmark_search --methods tree --output-dir benchmarks\results\pending_rerun
+py -3.14 -m benchmarks.benchmark_search --plot-only --metrics benchmarks/results/pending_rerun/metrics.csv --collisions benchmarks/results/pending_rerun/collision_rates.csv
 ```
 
-That uses seed 5300, 10,000 and 1,000,000 characters, and 3 repeats. The 1,000,000 character build is the slow part. Do not pass --allow-replace unless you intend to overwrite the saved measurements.
+That writes the four PNG files next to those CSV files. It does not change the CSV files or the older files in benchmarks/results. Do not pass --allow-replace.
 
 Every search, including the trie, returns the list of starting positions. Chart titles name the generator, the seed, the pattern, and the quantity. The collision chart uses a separate random ACGT text. The LCP chart is one build on a 2,000 character englishish sample.
 
-## After the trie rerun
+## Charts already measured
 
-1. Run the tree command above from the project folder. Wait until it prints the pending_rerun path.
-2. Open benchmarks/results/pending_rerun/metrics.csv. It should contain a 10000 character tree row and a 1000000 character tree row, both with status ok, and the note should say ukkonen-v1.
-3. In analysis/chapter10_report.md, leave the first combined table and the KMP, Rabin Karp, suffix array, and collision numbers as they are. Replace only the trie lines that are labeled as the earlier insertion trie. Copy the new setup mean, setup std, search mean, search std, and both peak byte pairs from the pending file. Say those cells are ukkonen-v1 measured on this PC.
-4. The bar chart in benchmarks/results still includes the earlier trie. The new bar chart, if you want one picture with all four methods, requires a full rerun into pending_rerun with no --methods filter. Do not copy that picture over the saved PNG until you mean to replace it. The heatmap, collision chart, and LCP chart in benchmarks/results do not use the trie and can stay.
-5. Do not edit runtime.csv, the saved metrics.csv, or collision_rates.csv while copying numbers into the report.
+The report uses benchmarks/results/pending_rerun/metrics.csv and collision_rates.csv. Leave runtime.csv, the older metrics.csv, and collision_rates.csv in benchmarks/results unchanged. If pull stops because four PNG files already sit in pending_rerun, move those local pictures aside and pull. Do not rerun the benchmark. If you want those exact local pictures in git instead of the plots made from the CSV, use this after the ignore fix, and do not force-add any other file:
+
+```
+git add -f benchmarks/results/pending_rerun/runtime_comparison.png benchmarks/results/pending_rerun/collision_analysis.png benchmarks/results/pending_rerun/sa_lcp_stats.png benchmarks/results/pending_rerun/heatmap_dataset_sizes.png
+```
 
 ## What the metric names mean
 

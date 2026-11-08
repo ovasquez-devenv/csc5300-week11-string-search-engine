@@ -390,6 +390,64 @@ def test_saved_measurement_files_are_not_replaced(tmp_path: Path) -> None:
     assert "collisions" not in paths
 
 
+def test_plot_from_saved_does_not_rewrite_csv_or_historical_charts(tmp_path: Path) -> None:
+    metrics = tmp_path / "metrics.csv"
+    collisions = tmp_path / "collision_rates.csv"
+    row = {field: "" for field in METRIC_FIELDS}
+    row.update(
+        dataset="small",
+        size="20",
+        method="kmp",
+        pattern="ab",
+        seed="5300",
+        repeats="3",
+        preprocess_mean_seconds="0.100000000",
+        preprocess_std_seconds="0.000000000",
+        search_mean_seconds="0.200000000",
+        search_std_seconds="0.000000000",
+        preprocess_tracemalloc_peak_mean_bytes="10.000",
+        preprocess_tracemalloc_peak_std_bytes="0.000",
+        search_tracemalloc_peak_mean_bytes="11.000",
+        search_tracemalloc_peak_std_bytes="0.000",
+        status="ok",
+    )
+    medium = dict(row)
+    medium.update(
+        dataset="medium",
+        size="40",
+        preprocess_mean_seconds="0.300000000",
+        search_mean_seconds="0.400000000",
+    )
+    with metrics.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=METRIC_FIELDS)
+        writer.writeheader()
+        writer.writerows([row, medium])
+    with collisions.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=COLLISION_FIELDS)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "modulus": "101",
+                "text_size": "20",
+                "pattern": "ACGTACGT",
+                "seed": "5300",
+                "repeats": "3",
+                "hash_hits_mean": "4.000",
+                "collisions_mean": "2.000",
+                "collision_rate_mean": "0.500000",
+                "collision_rate_std": "0.000000",
+            }
+        )
+    before = metrics.read_bytes()
+    paths = bench.plot_from_saved(metrics, collisions, lcp_sample_size=30)
+    assert metrics.read_bytes() == before
+    for key in ("runtime_comparison", "collision_analysis", "sa_lcp_stats", "heatmap"):
+        assert paths[key].is_file()
+        assert paths[key].stat().st_size > 500
+    with pytest.raises(ValueError):
+        bench.plot_from_saved(metrics, collisions, output_dir=bench.RESULTS, lcp_sample_size=30)
+
+
 def test_run_rejects_bad_repeats(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         run(output_dir=tmp_path, small=20, medium=30, repeats=0, tree_max_chars=100)

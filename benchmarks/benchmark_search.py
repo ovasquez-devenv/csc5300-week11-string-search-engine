@@ -482,7 +482,7 @@ def collision_chart_title(text_size: int, seed: int, repeats: int) -> str:
 def lcp_chart_title(sample_size: int, seed: int) -> str:
     return (
         f"LCP length of adjacent suffixes, one build, seed {seed}\n"
-        f"englishish {sample_size} characters. One suffix array and one LCP array."
+        f"englishish {sample_size} characters. Deterministic sample, not a timed row."
     )
 
 
@@ -692,6 +692,58 @@ def resolve_output_dir(destination: Path, allow_replace: bool) -> Path:
     return pending
 
 
+def plot_from_saved(
+    metrics_path: Path,
+    collision_path: Path,
+    output_dir: Path | None = None,
+    lcp_sample_size: int = DEFAULT_LCP_SAMPLE_SIZE,
+) -> dict[str, Path]:
+    """Draw the four charts from saved CSV rows. Does not time any search.
+
+    The LCP chart is the existing deterministic sample: englishish text,
+    lcp_sample_size characters, seed taken from the metrics file. It is not
+    a new benchmark measurement.
+    """
+    metrics_path = Path(metrics_path)
+    collision_path = Path(collision_path)
+    destination = Path(output_dir) if output_dir is not None else metrics_path.parent
+    if destination.resolve() == RESULTS.resolve():
+        raise ValueError("refusing to overwrite historical charts in benchmarks/results")
+    destination.mkdir(parents=True, exist_ok=True)
+    with metrics_path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        raise ValueError("metrics file has no rows")
+    seed = int(rows[0]["seed"])
+    repeats = int(rows[0]["repeats"])
+    pattern = rows[0]["pattern"]
+    small_rows = [row for row in rows if row["dataset"] == "small" and row["status"] == "ok"]
+    if not small_rows:
+        raise ValueError("metrics file has no small rows")
+    small = int(small_rows[0]["size"])
+    datasets = []
+    for label in ("small", "medium"):
+        sized = [row for row in rows if row["dataset"] == label]
+        if sized:
+            datasets.append((label, int(sized[0]["size"])))
+    with collision_path.open(newline="", encoding="utf-8") as handle:
+        collision_rows = list(csv.DictReader(handle))
+    if not collision_rows:
+        raise ValueError("collision file has no rows")
+    paths = {
+        "runtime_comparison": destination / CHART_FILES[0],
+        "collision_analysis": destination / CHART_FILES[1],
+        "sa_lcp_stats": destination / CHART_FILES[2],
+        "heatmap": destination / CHART_FILES[3],
+    }
+    _draw_runtime_chart(paths["runtime_comparison"], _completed(rows, "small"), small, seed, repeats, pattern)
+    _draw_collision_chart(paths["collision_analysis"], collision_rows, seed, repeats)
+    _draw_lcp_chart(paths["sa_lcp_stats"], lcp_sample_size, seed)
+    _draw_heatmap(paths["heatmap"], rows, datasets, seed, repeats, pattern)
+    print(f"Plotted saved rows into {destination}")
+    return paths
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -719,11 +771,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Write into a folder that already holds saved PC measurements.",
     )
+    parser.add_argument(
+        "--plot-only",
+        action="store_true",
+        help="Draw charts from saved CSV files. Does not time any method.",
+    )
+    parser.add_argument("--metrics", type=Path, default=None)
+    parser.add_argument("--collisions", type=Path, default=None)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+    if args.plot_only:
+        if args.metrics is None or args.collisions is None:
+            raise ValueError("plot only needs --metrics and --collisions")
+        plot_from_saved(
+            args.metrics,
+            args.collisions,
+            output_dir=None if args.output_dir == RESULTS else args.output_dir,
+            lcp_sample_size=args.lcp_sample_size,
+        )
+        return
     run(
         output_dir=args.output_dir,
         small=args.small,
