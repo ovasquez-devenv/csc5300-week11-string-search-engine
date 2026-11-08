@@ -15,9 +15,9 @@ From the project root on Windows, with Python 3.14:
 
 That command uses seed 5300, a 10,000 character text, a 1,000,000 character
 text, and 3 repeats. All four methods, including the Ukkonen trie, run at
-both lengths. If benchmarks/results already holds saved measurements, the
-run is written to benchmarks/results/pending_rerun instead of replacing
-those files.
+both lengths. If the output folder already holds measurement files, the run
+stops instead of replacing them or nesting another folder. The finished PC
+run is benchmarks/results/final_run.
 """
 
 from __future__ import annotations
