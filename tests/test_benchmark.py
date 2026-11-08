@@ -24,7 +24,13 @@ from benchmarks.benchmark_search import (
     DEFAULT_REPEATS,
     DEFAULT_SEED,
     DEFAULT_SMALL,
+    DEFAULT_TEXT_MAX_CHARS,
     DEFAULT_TREE_MAX_CHARS,
+    collision_chart_title,
+    heatmap_chart_title,
+    lcp_chart_title,
+    method_character_limit,
+    runtime_chart_title,
     METRIC_FIELDS,
     collision_stats,
     main,
@@ -58,7 +64,11 @@ def test_defaults_cover_required_sizes() -> None:
     assert DEFAULT_REPEATS == 3
     assert DEFAULT_SMALL == 10_000
     assert 1_000_000 <= DEFAULT_MEDIUM <= 5_000_000
-    assert DEFAULT_TREE_MAX_CHARS >= DEFAULT_MEDIUM
+    assert DEFAULT_SMALL <= DEFAULT_TREE_MAX_CHARS < DEFAULT_MEDIUM
+    assert DEFAULT_TREE_MAX_CHARS == 50_000
+    assert DEFAULT_TEXT_MAX_CHARS == DEFAULT_MEDIUM
+    assert method_character_limit("tree", tree_max_chars=50_000, text_max_chars=1_000_000) == 50_000
+    assert method_character_limit("sa", tree_max_chars=50_000, text_max_chars=1_000_000) == 1_000_000
     assert COLLISION_MODULI == (101, 1009, 10007, 100003)
 
 
@@ -115,12 +125,24 @@ def test_suffix_array_search_timer_builds_once(monkeypatch) -> None:
     assert query("sa", text, pattern, array) == kmp_search(text, pattern)
 
 
-def test_tree_query_is_substring_check() -> None:
-    text = "BANANA"
-    tree = prepare("tree", text, "ANA")
-    assert isinstance(tree, SuffixTree)
-    assert query("tree", text, "ANA", tree) is True
-    assert query("tree", text, "XYZ", tree) is False
+def test_tree_query_returns_the_same_positions_as_kmp() -> None:
+    samples = [
+        ("BANANA", "ANA"),
+        ("BANANA", "A"),
+        ("BANANA", "NA"),
+        ("BANANA", "BANANA"),
+        ("BANANA", "XYZ"),
+        ("AAAA", "AA"),
+        ("AAAAA", "AA"),
+        ("the cat sat on the mat", "the"),
+        ("START middle END", "END"),
+        ("ABC", "ABCD"),
+        (bench.englishish(1500, seed=5300), "search"),
+    ]
+    for text, pattern in samples:
+        tree = prepare("tree", text, pattern)
+        assert isinstance(tree, SuffixTree)
+        assert query("tree", text, pattern, tree) == kmp_search(text, pattern)
 
 
 def test_timer_refuses_to_run_while_tracing() -> None:
@@ -283,7 +305,66 @@ def test_parse_args_defaults_match_assignment() -> None:
     assert args.medium == 1_000_000
     assert args.repeats == 3
     assert args.seed == 5300
-    assert args.tree_max_chars == 1_000_000
+    assert args.tree_max_chars == 50_000
+    assert args.text_max_chars == 1_000_000
+
+
+def test_default_medium_trie_is_skipped_and_scans_run(tmp_path: Path, monkeypatch) -> None:
+    built: list[int] = []
+    real_init = SuffixTree.__init__
+
+    def wrapped(self, text: str) -> None:
+        built.append(len(text))
+        real_init(self, text)
+
+    monkeypatch.setattr(SuffixTree, "__init__", wrapped)
+    paths = run(
+        output_dir=tmp_path,
+        small=80,
+        medium=500,
+        repeats=1,
+        tree_max_chars=100,
+        text_max_chars=200,
+        collision_text_size=120,
+        lcp_sample_size=40,
+    )
+    assert built and max(built) <= 80
+    with paths["metrics"].open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    skipped = {(row["dataset"], row["method"]) for row in rows if row["status"] == "skipped"}
+    assert skipped == {
+        ("medium", "kmp"),
+        ("medium", "rk"),
+        ("medium", "sa"),
+        ("medium", "tree"),
+    }
+    medium_tree = next(row for row in rows if row["dataset"] == "medium" and row["method"] == "tree")
+    medium_sa = next(row for row in rows if row["dataset"] == "medium" and row["method"] == "sa")
+    assert "500" in medium_tree["note"] and "100" in medium_tree["note"]
+    assert "200" in medium_sa["note"]
+    assert medium_tree["search_mean_seconds"] == ""
+    assert medium_sa["preprocess_mean_seconds"] == ""
+
+
+def test_chart_titles_name_measurement_and_source() -> None:
+    runtime = runtime_chart_title(10_000, 5300, 3, "search")
+    assert "10000" in runtime
+    assert "5300" in runtime
+    assert "search" in runtime
+    assert "englishish" in runtime
+    assert "preprocessing" in runtime
+    assert "metrics" not in runtime or "This run" in runtime
+    collision = collision_chart_title(20_000, 5300, 3)
+    assert "ACGT" in collision
+    assert "20000" in collision
+    assert "metrics.csv" in collision
+    lcp = lcp_chart_title(2_000, 5300)
+    assert "2000" in lcp
+    assert "englishish" in lcp
+    assert "one build" in lcp
+    heatmap = heatmap_chart_title(5300, 3, "search")
+    assert "search seconds" in heatmap
+    assert "every size" in heatmap
 
 
 def test_run_rejects_bad_repeats(tmp_path: Path) -> None:

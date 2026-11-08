@@ -32,23 +32,28 @@ py -3.14 -m pip install -r requirements.txt
 py -3.14 -m benchmarks.benchmark_search
 ```
 
-The benchmark command uses seed 5300, a text of 10,000 characters, a text of 1,000,000 characters, and 3 repeats. It writes benchmarks/results/metrics.csv and benchmarks/results/collision_rates.csv, and it redraws the four PNG files in that folder: runtime_comparison.png, collision_analysis.png, sa_lcp_stats.png, and heatmap_dataset_sizes.png. The script leaves benchmarks/results/runtime.csv as the earlier combined timer run from this PC.
+Run that last command as written. It uses seed 5300, a text of 10,000 characters, a text of 1,000,000 characters, and 3 repeats. It writes benchmarks/results/metrics.csv and benchmarks/results/collision_rates.csv, and it redraws the four PNG files in that folder. It leaves benchmarks/results/runtime.csv as the earlier combined timer run from this PC.
 
-The compressed trie is included on both default lengths. The tree max chars setting defaults to 1000000. A longer text gets a metrics row with status skipped, and the note states the length and the limit. KMP, Rabin Karp, and the suffix array are still measured at that longer length. An optional longer trie run looks like this:
+Safe default limits, so a longer text is skipped instead of run:
 
-```
-py -3.14 -m benchmarks.benchmark_search --tree-max-chars 5000000 --medium 5000000
-```
+| Method | Measured up to | At the default 1,000,000 character text |
+| --- | --- | --- |
+| KMP | 1,000,000 characters | measured |
+| Rabin Karp | 1,000,000 characters | measured |
+| suffix array | 1,000,000 characters | measured |
+| compressed trie | 50,000 characters | skipped |
 
-The required medium text for the writeup is the default 1,000,000 characters.
+The trie limit is 50,000 because the build keeps a Python node for each piece of every suffix, and the script rebuilds it for the preprocessing samples and again for the memory samples. The 10,000 character text is under that limit. The 1,000,000 character trie is over it, so that row says skipped and gives the length and the limit. KMP, Rabin Karp, and the suffix array use a 1,000,000 character limit. The default command does not go past those limits. The medium suffix array is the slow part, because the script rebuilds it for the preprocessing samples and again for the memory samples.
+
+Every search, including the trie, returns the list of starting positions. Chart titles name the generator, the seed, the pattern, and the quantity. The collision chart uses a separate random ACGT text. The LCP chart is one build on a 2,000 character englishish sample.
 
 ## Put the new numbers in the report
 
-1. Run the Python 3.14 command above on your PC. Wait until it prints the metrics path. The 1 MB suffix array and the 1 MB trie take longer than the small text. The memory pass is slower because tracemalloc is on for those samples only.
+1. Run `py -3.14 -m benchmarks.benchmark_search` from the project folder. Wait until it prints the metrics path. Let it finish. The 1,000,000 character suffix array is the long part, and the memory repeats are slower because tracemalloc is on only for those samples. The trie row for that text will say skipped. That is the expected default.
 2. Open benchmarks/results/metrics.csv. Each row with status ok has a mean and a population standard deviation for preprocessing seconds, search seconds, and both tracemalloc peaks. Rabin Karp rows also have the collision rate.
 3. Open analysis/chapter10_report.md. Leave the combined time table as it is. Those seven numbers are the earlier run in runtime.csv.
-4. Under that table, add the new means from metrics.csv. Keep the column names next to the digits so a reader can see preprocessing, search, and the tracemalloc peak. Copy the digits from the CSV. If a row says skipped, copy the note and leave the time cells blank.
-5. This run replaces the four PNG files. runtime_comparison.png shows preprocessing beside search on the small text. The heatmap shows search latency. The collision chart and the LCP chart stay the same kinds of plots, and the collision numbers are also in collision_rates.csv.
+4. Under that table, add the new means from metrics.csv. Keep the column names next to the digits so a reader can see preprocessing, search, and the tracemalloc peak. Copy the digits from the CSV. For the skipped trie row, copy the note and leave the time cells blank.
+5. This run replaces the four PNG files. Read the title on each picture: it names the text, the seed, and the quantity. runtime_comparison.png shows preprocessing beside search on the small text from this run. The heatmap shows search latency for methods measured on both sizes, so the trie is absent there. The collision chart is the ACGT modulus sweep. The LCP chart is one 2,000 character sample. The collision numbers are also in collision_rates.csv.
 6. Save the report, both CSV files, and the four PNG files together so the words match the files.
 
 ## What the metric names mean

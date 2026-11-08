@@ -14,8 +14,10 @@ From the project root on Windows, with Python 3.14:
     py -3.14 -m benchmarks.benchmark_search
 
 That command uses seed 5300, a 10,000 character text, a 1,000,000 character
-text, and 3 repeats. It writes metrics.csv, collision_rates.csv, and the
-four PNG charts under benchmarks/results.
+text, and 3 repeats. KMP, Rabin Karp, and the suffix array run at both
+lengths. The compressed trie runs only up to 50,000 characters, so the
+1,000,000 character trie row is skipped. The script writes metrics.csv,
+collision_rates.csv, and the four PNG charts under benchmarks/results.
 """
 
 from __future__ import annotations
@@ -49,7 +51,8 @@ DEFAULT_SEED = SEED
 DEFAULT_REPEATS = 3
 DEFAULT_SMALL = 10_000
 DEFAULT_MEDIUM = 1_000_000
-DEFAULT_TREE_MAX_CHARS = 1_000_000
+DEFAULT_TREE_MAX_CHARS = 50_000
+DEFAULT_TEXT_MAX_CHARS = 1_000_000
 DEFAULT_PATTERN = "search"
 DEFAULT_MODULUS = 1_000_000_007
 DEFAULT_COLLISION_TEXT_SIZE = 20_000
@@ -137,7 +140,7 @@ def query(method: str, text: str, pattern: str, state):
     if method == "sa":
         return binary_search(text, state, pattern)
     if method == "tree":
-        return state.find_substring(pattern)
+        return _tree_positions(state, pattern)
     raise ValueError(f"Unknown method: {method}")
 
 
@@ -191,6 +194,62 @@ def _rk_search(text: str, pattern: str, state) -> list[int]:
             else:
                 matcher.collisions += 1
     return positions
+
+
+def _tree_positions(tree: SuffixTree, pattern: str) -> list[int]:
+    """Return every starting position of pattern in the compressed trie.
+
+    The walk uses the edge index ranges already stored on the nodes. It does
+    not call find_substring, which only answers yes or no. Positions are
+    sorted so the list matches the other search methods.
+    """
+    text = tree.text
+    n = len(text)
+    m = len(pattern)
+    if m == 0 or m > n:
+        return []
+    node = tree.root
+    depth = 0
+    i = 0
+    while i < m:
+        child = node.children.get(pattern[i])
+        if child is None:
+            return []
+        label_len = child.end - child.start
+        k = 0
+        while k < label_len and i < m:
+            if text[child.start + k] != pattern[i]:
+                return []
+            k += 1
+            i += 1
+        depth += label_len
+        node = child
+    positions: list[int] = []
+    stack = [(node, depth)]
+    while stack:
+        current, current_depth = stack.pop()
+        if current.is_terminal:
+            positions.append(n - current_depth)
+        for nxt in current.children.values():
+            stack.append((nxt, current_depth + (nxt.end - nxt.start)))
+    positions.sort()
+    return positions
+
+
+def method_character_limit(
+    method: str, *, tree_max_chars: int, text_max_chars: int
+) -> int:
+    """Largest text length this method will measure.
+
+    The trie limit is lower because the build stores a Python node for every
+    piece of every suffix and the default run repeats that build. KMP, Rabin
+    Karp, and the suffix array share the larger text limit.
+    """
+    if method == "tree":
+        return tree_max_chars
+    if method in ("kmp", "rk", "sa"):
+        return text_max_chars
+    raise ValueError(f"Unknown method: {method}")
 
 
 def _elapsed(fn) -> float:
@@ -281,14 +340,31 @@ def _method_note(method: str) -> str:
             "The LCP array is built for the LCP chart."
         )
     if method == "tree":
-        return "Search timing is find_substring, which returns yes or no."
+        return (
+            "Search lists every starting position in the trie. "
+            "The other methods list starting positions too."
+        )
+    if method == "kmp":
+        return "Preprocess times the failure table. Search times the text scan."
+    if method == "rk":
+        return (
+            "Preprocess times the pattern hash and window power. "
+            "Search times the sliding window. "
+            "Collision columns use RabinKarp.search on this same text and pattern."
+        )
     return ""
 
 
-def _skip_note(size: int, tree_max_chars: int) -> str:
+def _skip_note(method: str, size: int, limit: int) -> str:
+    labels = {
+        "kmp": "KMP",
+        "rk": "Rabin Karp",
+        "sa": "suffix array",
+        "tree": "compressed trie",
+    }
     return (
-        "Compressed trie skipped because the text length is "
-        f"{size} characters and the limit is {tree_max_chars} characters."
+        f"{labels[method]} skipped because the text length is {size} characters "
+        f"and the limit for this method is {limit} characters."
     )
 
 
@@ -323,8 +399,12 @@ def measure_method(
     repeats: int,
     seed: int,
     tree_max_chars: int,
+    text_max_chars: int,
 ) -> dict[str, str]:
-    if method == "tree" and size > tree_max_chars:
+    limit = method_character_limit(
+        method, tree_max_chars=tree_max_chars, text_max_chars=text_max_chars
+    )
+    if size > limit:
         return _empty_metric_row(
             dataset,
             size,
@@ -333,7 +413,7 @@ def measure_method(
             seed,
             repeats,
             "skipped",
-            _skip_note(size, tree_max_chars),
+            _skip_note(method, size, limit),
         )
     pre_mean, pre_std = time_prepare(method, text, pattern, repeats)
     search_mean, search_std = time_search(method, text, pattern, repeats)
@@ -363,7 +443,7 @@ def measure_method(
         row["rk_collision_rate_mean"] = _fmt_rate(stats["collision_rate_mean"])
         row["rk_collision_rate_std"] = _fmt_rate(stats["collision_rate_std"])
         if stats["hash_hits_mean"] == 0:
-            row["note"] = "No hash hits, so the collision rate is recorded as 0."
+            row["note"] = row["note"] + " No hash hits, so the collision rate is recorded as 0."
     return row
 
 
@@ -416,7 +496,45 @@ def _completed(rows: list[dict[str, str]], dataset: str) -> dict[str, dict[str, 
     }
 
 
-def _draw_runtime_chart(path: Path, small_rows: dict[str, dict[str, str]], small: int, seed: int) -> None:
+def runtime_chart_title(small: int, seed: int, repeats: int, pattern: str) -> str:
+    return (
+        f"This run, mean seconds, {repeats} repeats, seed {seed}\n"
+        f"englishish {small} characters, pattern {pattern}\n"
+        "Left bar: preprocessing. Right bar: search after the build."
+    )
+
+
+def collision_chart_title(text_size: int, seed: int, repeats: int) -> str:
+    return (
+        f"Mean collisions / hash hits, {repeats} repeats, seed {seed}\n"
+        f"random ACGT text, {text_size} characters, 8 character slice from inside it\n"
+        "Separate from the benchmark text rows in metrics.csv"
+    )
+
+
+def lcp_chart_title(sample_size: int, seed: int) -> str:
+    return (
+        f"LCP length of adjacent suffixes, one build, seed {seed}\n"
+        f"englishish {sample_size} characters. One suffix array and one LCP array."
+    )
+
+
+def heatmap_chart_title(seed: int, repeats: int, pattern: str) -> str:
+    return (
+        f"Mean search seconds after the build, {repeats} repeats, seed {seed}\n"
+        f"englishish texts, pattern {pattern}\n"
+        "A method is drawn only when it was measured on every size shown"
+    )
+
+
+def _draw_runtime_chart(
+    path: Path,
+    small_rows: dict[str, dict[str, str]],
+    small: int,
+    seed: int,
+    repeats: int,
+    pattern: str,
+) -> None:
     methods = [method for method in METHODS if method in small_rows]
     fig, ax = plt.subplots()
     if methods:
@@ -440,22 +558,23 @@ def _draw_runtime_chart(path: Path, small_rows: dict[str, dict[str, str]], small
         )
         ax.set_xticks(indexes, methods)
         ax.legend()
-    ax.set_title(f"Preprocessing and search on {small} characters (seed {seed})")
-    ax.set_ylabel("Mean seconds")
+    ax.set_title(runtime_chart_title(small, seed, repeats, pattern), fontsize=9)
+    ax.set_ylabel("Mean seconds from this run")
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
 
 
-def _draw_collision_chart(path: Path, rows: list[dict[str, str]], seed: int) -> None:
+def _draw_collision_chart(path: Path, rows: list[dict[str, str]], seed: int, repeats: int) -> None:
+    text_size = int(rows[0]["text_size"]) if rows else 0
     fig, ax = plt.subplots()
     ax.bar(
         [row["modulus"] for row in rows],
         [float(row["collision_rate_mean"]) for row in rows],
         color="#c47b2b",
     )
-    ax.set_title(f"Rabin Karp collision rate by modulus (seed {seed})")
-    ax.set_ylabel("Collisions / hash hits")
+    ax.set_title(collision_chart_title(text_size, seed, repeats), fontsize=9)
+    ax.set_ylabel("Mean collisions / hash hits")
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
@@ -467,7 +586,7 @@ def _draw_lcp_chart(path: Path, sample_size: int, seed: int) -> None:
     lcp = build_lcp(sample, suffix_array)
     fig, ax = plt.subplots()
     ax.plot(lcp, color="#2c5f8a")
-    ax.set_title(f"LCP array on {sample_size} character sample (seed {seed})")
+    ax.set_title(lcp_chart_title(sample_size, seed), fontsize=9)
     ax.set_xlabel("Adjacent suffix rank")
     ax.set_ylabel("LCP length")
     fig.tight_layout()
@@ -480,6 +599,8 @@ def _draw_heatmap(
     rows: list[dict[str, str]],
     datasets: list[tuple[str, int]],
     seed: int,
+    repeats: int,
+    pattern: str,
 ) -> None:
     by_dataset = {label: _completed(rows, label) for label, _size in datasets}
     methods = [
@@ -499,8 +620,8 @@ def _draw_heatmap(
             range(len(datasets)),
             [f"{size} chars" for _label, size in datasets],
         )
-        fig.colorbar(image, ax=ax, label="seconds")
-    ax.set_title(f"Mean search latency (seed {seed})")
+        fig.colorbar(image, ax=ax, label="mean search seconds")
+    ax.set_title(heatmap_chart_title(seed, repeats, pattern), fontsize=9)
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
@@ -515,6 +636,7 @@ def run(
     seed: int = DEFAULT_SEED,
     pattern: str = DEFAULT_PATTERN,
     tree_max_chars: int = DEFAULT_TREE_MAX_CHARS,
+    text_max_chars: int = DEFAULT_TEXT_MAX_CHARS,
     collision_text_size: int = DEFAULT_COLLISION_TEXT_SIZE,
     lcp_sample_size: int = DEFAULT_LCP_SAMPLE_SIZE,
     collision_moduli: tuple[int, ...] = COLLISION_MODULI,
@@ -523,8 +645,8 @@ def run(
         raise ValueError("repeats must be at least 1")
     if small < 1 or medium < 1:
         raise ValueError("text sizes must be positive")
-    if tree_max_chars < 0:
-        raise ValueError("tree max chars cannot be negative")
+    if tree_max_chars < 0 or text_max_chars < 0:
+        raise ValueError("character limits cannot be negative")
     if collision_text_size < 1 or lcp_sample_size < 1:
         raise ValueError("chart sample sizes must be positive")
 
@@ -545,6 +667,7 @@ def run(
                     repeats,
                     seed,
                     tree_max_chars,
+                    text_max_chars,
                 )
             )
     metrics_path = destination / "metrics.csv"
@@ -557,13 +680,18 @@ def run(
     _write_csv(collision_path, COLLISION_FIELDS, collision_rows)
 
     chart_paths = [destination / name for name in CHART_FILES]
-    _draw_runtime_chart(chart_paths[0], _completed(rows, "small"), small, seed)
-    _draw_collision_chart(chart_paths[1], collision_rows, seed)
+    _draw_runtime_chart(
+        chart_paths[0], _completed(rows, "small"), small, seed, repeats, pattern
+    )
+    _draw_collision_chart(chart_paths[1], collision_rows, seed, repeats)
     _draw_lcp_chart(chart_paths[2], lcp_sample_size, seed)
-    _draw_heatmap(chart_paths[3], rows, list(datasets), seed)
+    _draw_heatmap(chart_paths[3], rows, list(datasets), seed, repeats, pattern)
     print(f"Wrote {metrics_path}")
     print(f"Wrote {collision_path}")
     print("Left runtime.csv unchanged.")
+    for row in rows:
+        if row["status"] == "skipped":
+            print(f"Skipped {row['dataset']} {row['method']}: {row['note']}")
     return {
         "metrics": metrics_path,
         "collisions": collision_path,
@@ -588,6 +716,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--pattern", default=DEFAULT_PATTERN)
     parser.add_argument("--tree-max-chars", type=int, default=DEFAULT_TREE_MAX_CHARS)
+    parser.add_argument("--text-max-chars", type=int, default=DEFAULT_TEXT_MAX_CHARS)
     parser.add_argument("--collision-text-size", type=int, default=DEFAULT_COLLISION_TEXT_SIZE)
     parser.add_argument("--lcp-sample-size", type=int, default=DEFAULT_LCP_SAMPLE_SIZE)
     return parser.parse_args(argv)
@@ -603,6 +732,7 @@ def main(argv: list[str] | None = None) -> None:
         seed=args.seed,
         pattern=args.pattern,
         tree_max_chars=args.tree_max_chars,
+        text_max_chars=args.text_max_chars,
         collision_text_size=args.collision_text_size,
         lcp_sample_size=args.lcp_sample_size,
     )
