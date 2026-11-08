@@ -6,33 +6,33 @@ CSC 5300 Week 11
 
 ## Executive summary
 
-This project implements four ways to find a pattern inside a text: Knuth Morris Pratt (KMP), Rabin Karp, a suffix array, and a compressed suffix tree. KMP is the default for one pattern. It preprocesses the pattern into a failure table and never moves backward in the text. Rabin Karp hashes a sliding window and is the better fit when many patterns share one pass. The suffix array and the suffix tree cost more to build and pay off when the same text is queried many times.
+The assignment is to compare four ways to find a pattern in a text, and to measure them on my own PC. I implemented Knuth Morris Pratt (KMP), Rabin Karp, a suffix array, and a compressed suffix tree. KMP is my default for one pattern. Rabin Karp fits many patterns in one pass. The suffix array and the suffix tree cost more to build and pay off when I query the same text many times.
 
-The code lives in a Python package named StringSearchEngine. Tests cover the failure table, repeated characters, a pattern longer than the text, hash collisions that must be verified, suffix array order, and tree queries. Seed 5300 produced the older combined times below. The current split times, peaks, and collision counts are the Python 3.14.7 runs in benchmarks/results/final_run and benchmarks/results/sa_final.
+The code is in this Python project, StringSearchEngine. My tests cover the failure table, repeated characters, a pattern longer than the text, hash collisions that still have to be verified, suffix array order, and tree queries. Seed 5300 produced the older combined times below. The current split times, peaks, and collision counts are the Python 3.14.7 runs in benchmarks/results/final_run and benchmarks/results/sa_final.
 
 ## String matching complexity
 
 The naive search tries the pattern at every position. If the text length is n and the pattern length is m, the worst case is about n times m character comparisons.
 
-KMP removes that waste. Section 10.3 of Amakobe describes the failure function. For each position in the pattern, the table stores the length of the longest proper prefix that is also a suffix. Building the table is linear in m. The search walks the text once and jumps with the table on a mismatch. Total time is O(n + m). Space is O(m) for the table.
+KMP removes that waste. Section 10.3 of Amakobe describes the failure function. For each pattern position, the table stores the longest proper prefix that is also a suffix. The table is O(m). The search walks the text once. Total time is O(n + m). Space is O(m).
 
-Rabin Karp, in section 10.4, turns the pattern into a number. A window of length m slides across the text and the hash updates in constant time. A matching hash is only a candidate, so the characters are still compared. Expected time is O(n + m). The worst case is O(n m) when collisions keep happening. Many patterns can share one pass.
+Rabin Karp, in section 10.4, turns the pattern into a number. The window hash updates in constant time. A matching hash is only a candidate, so I still compare the characters. Expected time is O(n + m). The worst case is O(n m) when collisions keep happening.
 
-A suffix array lists every suffix start in sorted order. The prefix doubling build used here is O(n log n). Kasai's algorithm builds the LCP array in linear time, and a query is a binary search. A suffix tree stores the same suffixes in a compressed trie, so substring and prefix queries walk the edges.
+A suffix array lists every suffix start in sorted order. The prefix doubling build I use is O(n log n). Kasai's algorithm builds the LCP array in linear time, and a query is a binary search. A suffix tree stores the same suffixes in a compressed trie, so substring and prefix queries walk the edges.
 
 ## Implementation details
 
-KMP lives in core/kmp.py. For ABABD the failure table is 0, 0, 1, 2, 0, as in section 10.3.2. For AABAAB it is 0, 1, 0, 1, 2, 3. kmp_search returns every start. An empty pattern, or a pattern longer than the text, returns an empty list. Overlaps stay, as when AAAAA is searched for AA.
+KMP lives in core/kmp.py. For ABABD the failure table is 0, 0, 1, 2, 0, as in section 10.3.2. For AABAAB it is 0, 1, 0, 1, 2, 3. An empty pattern, or a pattern longer than the text, returns an empty list. Overlaps stay, as when AAAAA is searched for AA. On a mismatch the pattern index falls back and the text index stays put. That trace is in analysis/demonstrations.md.
 
-Rabin Karp lives in core/rabin_karp.py. The base is 256 and the modulus is 1000000007. Every hash hit is checked against the characters, and the object counts hits and collisions.
+Rabin Karp lives in core/rabin_karp.py. The base is 256 and the modulus is 1000000007. Every hash hit is checked against the characters, and the object counts hits and collisions. A small base and modulus table is in that same demonstration. The verified positions did not change.
 
-The suffix array in core/suffix_array.py uses prefix doubling and Kasai's LCP, and binary_search returns the matching starts. The suffix tree in core/suffix_tree.py is a compressed trie built with Ukkonen's algorithm. It can test a substring, list every start position, list prefixes, find a longest repeated substring, and count distinct substrings.
+The suffix array in core/suffix_array.py uses prefix doubling, Kasai's LCP, and binary search. Each round is two stable counting passes, so the build is O(n log n). A comparison sort each round would be O(n log^2 n). The suffix tree in core/suffix_tree.py is Ukkonen's compressed trie. It tests a substring, lists starts and prefixes, finds a longest repeated substring, and counts distinct substrings.
 
-StringSearchEngine(text).find(pattern, method, repeats=3) accepts kmp, rk, sa, or tree. preprocessing_time is one setup. search_time is the mean of that many searches, and the setup is not inside those search clocks.
+StringSearchEngine(text).find(pattern, method, repeats=3) accepts kmp, rk, sa, or tree. It returns the positions, the match count, preprocessing_time, search_time, and a short recommendation. preprocessing_time is one setup. search_time is the mean of that many searches, and the setup is not inside those search clocks.
 
 ## Benchmark analysis
 
-The first table is the earlier whole call on this PC: three repeats, seed 5300, pattern search. Mean is statistics.mean and std is statistics.pstdev, the population kind. Those seven rows stay in benchmarks/results/runtime.csv. That run left out the 1 MB trie.
+The first table is the earlier whole call on my PC: three repeats, seed 5300, pattern search. Std is statistics.pstdev. Those seven rows stay in benchmarks/results/runtime.csv. That run left out the 1 MB trie. One clock covered both phases.
 
 | Dataset | Method | Mean seconds | Std seconds |
 | --- | --- | --- | --- |
@@ -44,9 +44,9 @@ The first table is the earlier whole call on this PC: three repeats, seed 5300, 
 | 1 MB | rk | 0.233437 | 0.007826 |
 | 1 MB | sa | 6.761709 | 0.079170 |
 
-KMP, Rabin Karp, the trie, and the collision rows are benchmarks/results/final_run from this PC, Python 3.14.7, seed 5300, pattern search, and three repeats. The suffix array rows are benchmarks/results/sa_final/metrics.csv from the radix build on this same PC. The benchmark script times three builds and three lookups. engine.find is different: one setup, then the mean of three searches in search_time. Tracemalloc was stopped during the timers. Memory came later, after garbage collection, as the peak bytes Python allocated in that call. Setup peak includes the build. Search peak is the query. A Task Manager figure is a different measurement.
+KMP, Rabin Karp, the trie, and the collision rows are benchmarks/results/final_run from my PC, Python 3.14.7, seed 5300, pattern search, and three repeats. The suffix array rows are benchmarks/results/sa_final/metrics.csv, the radix build. The script times three builds and three lookups. engine.find is one setup, then the mean of three searches. Tracemalloc was off during the timers. I measured peak bytes afterward, after garbage collection. A Task Manager figure is a different measurement.
 
-KMP setup is the failure table, and the search scans the text. Rabin Karp setup is the pattern hash and the window power, and the search slides the window. Suffix array setup builds the array, and the search is binary search. Trie setup is the Ukkonen build, and the trie search lists every starting position.
+KMP setup is the failure table. Rabin Karp setup is the pattern hash and the window power. Suffix array setup builds the array. Trie setup is the Ukkonen build.
 
 Current split times, in seconds. Suffix array lines are from sa_final. The other lines are from final_run:
 
@@ -62,7 +62,7 @@ dataset method setup_mean setup_std search_mean search_std
 1MB tree 4.708075733 0.672019565 0.013319400 0.000154318
 ```
 
-Peak Python allocation, in bytes, from that same file:
+Peak Python allocation, in bytes. The suffix array peaks are from sa_final. The other peaks are from final_run.
 
 ```
 dataset method setup_peak_mean setup_peak_std search_peak_mean search_peak_std
@@ -76,9 +76,9 @@ dataset method setup_peak_mean setup_peak_std search_peak_mean search_peak_std
 1MB tree 271656049.333 9.978 560328 0
 ```
 
-The first table used one clock for both phases. The large peaks are the 1 MB trie at 271656049.333 bytes and the 1 MB radix suffix array at 135123333 bytes. The comparison-sort setup in final_run was 6.419160933 seconds at 1 MB. This radix build took 12.172076967 seconds. The O(n log n) bound is tighter, and the Python counting passes were slower.
+KMP setup is a few microseconds and its std is about as large as the mean, so that clock is noisy. The large peaks are the 1 MB trie at 271656049.333 bytes and the 1 MB radix suffix array at 135123333 bytes. The comparison-sort setup in final_run was 6.419160933 seconds at 1 MB. This radix build took 12.172076967 seconds. The O(n log n) bound is tighter, and on my PC the Python counting passes were slower.
 
-The collision rate is collisions divided by hash hits. It is the share of hash hits that failed the character check. Windows with no hash hit stay outside the rate. Modulus 1000000007 gave 129 hits and 0 collisions on 10 KB, and 12506 hits and 0 collisions on 1 MB, so both rates are 0. The std is 0 because the three repeats used the same seeded text.
+The collision rate is collisions divided by hash hits, so it counts hash hits that failed the character check. Modulus 1000000007 gave 129 hits and 0 collisions on 10 KB, and 12506 hits and 0 collisions on 1 MB. The std is 0 because the three repeats used the same seeded text.
 
 The modulus rows are benchmarks/results/final_run/collision_rates.csv. The text is 20000 random ACGT characters, pattern GGTGCTTA, seed 5300, three repeats.
 
@@ -92,7 +92,15 @@ modulus hash_hits collisions rate rate_std
 
 A smaller modulus fails the character check more often. That rate std is also 0, from repeating the seeded text. The LCP chart is one deterministic 2000 character englishish sample, seed 5300, and it is not a timed row.
 
-Charts for these tables are in benchmarks/results/current_figures. KMP, Rabin Karp, and the trie bars use final_run. The suffix array bars use sa_final. KMP fallback steps and the Rabin Karp base table are in analysis/demonstrations.md.
+The pictures are benchmarks/results/current_figures. KMP, Rabin Karp, and the trie bars use final_run. The suffix array bars use sa_final. I did not time a new run. Files in benchmarks/results, final_run, and pending_rerun are earlier runs.
+
+![10 KB runtime bars](../benchmarks/results/current_figures/runtime_comparison.png)
+
+![Collision rates](../benchmarks/results/current_figures/collision_analysis.png)
+
+![LCP sample](../benchmarks/results/current_figures/sa_lcp_stats.png)
+
+![Search time heatmap](../benchmarks/results/current_figures/heatmap_dataset_sizes.png)
 
 ## Trade offs
 
@@ -100,23 +108,22 @@ KMP has a small setup and a fast scan for one pattern. A new pattern still walks
 
 Rabin Karp pays off when many patterns share a pass. One pattern is often no faster than KMP, and a small modulus adds checks. Every hash hit is still verified.
 
-The suffix array fits a fixed text and many patterns. The O(n log n) build is the cost, and each later query is a binary search. The LCP array also feeds the plagiarism longest common substring.
+The suffix array fits a fixed text and many patterns. The O(n log n) build is the cost, and each later query is a binary search. The LCP array also feeds the plagiarism longest common substring. The tighter bound did not make the measured build faster in Python.
 
 At 1 MB the Ukkonen setup mean is 4.708075733 seconds and the radix suffix array setup mean is 12.172076967 seconds. The trie search mean is 0.013319400 seconds. The build still dominates a one time search.
 
 ## Applications
 
-plagiarism.py finds shared phrases with Rabin Karp, then uses the suffix array and LCP for a longest common substring. The score is the share of phrase windows from the first document that also appear in the second.
+plagiarism.py finds shared phrases with Rabin Karp, then uses the suffix array and LCP for a longest common substring. The score is the share of phrase windows from the first document that also appear in the second. highlight wraps those phrases in brackets.
 
-dna_search.py loads data/sample.fasta, a short synthetic gene, and searches motifs with the suffix array and the suffix tree.
+dna_search.py loads data/sample.fasta, a short synthetic gene, and searches motifs with the suffix array and the suffix tree. It does not do approximate matching.
 
 autocomplete.py returns the top completions for a prefix, by count and then by the word.
 
 ## Conclusion
 
-KMP is the right default for one pattern. Rabin Karp is the right tool for a set of patterns. A suffix array or a compressed trie is the right tool when one text will be queried many times. The first table is the older combined run. The split tables use final_run for KMP, Rabin Karp, and the trie, and sa_final for the radix suffix array.
+KMP is the default I would keep for one pattern. Rabin Karp is what I would use for a set of patterns. A suffix array or a compressed trie is what I would build when one text will be queried many times. The split tables use final_run for KMP, Rabin Karp, and the trie, and sa_final for the radix suffix array.
 
 ## Source
 
 Amakobe, M. (2025). Advanced algorithms: A journey through computational problem solving. Chapter 10.
-
