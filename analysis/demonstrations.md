@@ -1,7 +1,7 @@
 # KMP and Rabin Karp demonstrations
 
-These rows were produced by running the code on fixed strings.
-Returned matches are the positions that passed the character check.
+I ran these checks on fixed strings. They are not timing measurements.
+A returned match is a position that passed the character check.
 A hash hit that fails that check is a collision, not a match.
 
 KMP mismatch fallback
