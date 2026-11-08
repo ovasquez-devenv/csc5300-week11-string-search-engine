@@ -32,13 +32,13 @@ py -3.14 -m pip install -r requirements.txt
 py -3.14 -m benchmarks.benchmark_search
 ```
 
-The current PC measurement is benchmarks/results/final_run. benchmarks/results/runtime.csv is the older combined run. benchmarks/results/pending_rerun is the earlier split run. A benchmark refuses to write into a folder that already has measurement files, and it does not create a nested folder. Do not pass --allow-replace.
+benchmarks/results/runtime.csv is the older combined run. benchmarks/results/pending_rerun is an earlier split run. KMP, Rabin Karp, the trie, and collisions in the report come from benchmarks/results/final_run. The suffix array cells come from benchmarks/results/sa_final. The pictures that match those current cells are benchmarks/results/current_figures. A benchmark refuses to write into a folder that already has measurement files, and it does not create a nested folder. Do not pass --allow-replace. Do not rerun the benchmark.
 
 Every search, including the trie, returns the list of starting positions. Chart titles name the generator, the seed, the pattern, and the quantity. The collision chart uses a separate random ACGT text. The LCP chart is one build on a 2,000 character englishish sample.
 
 ## Charts already measured
 
-The report uses benchmarks/results/final_run/metrics.csv, collision_rates.csv, and the four PNG files in that folder. Leave runtime.csv, pending_rerun, and the older files directly in benchmarks/results unchanged. Do not rerun the benchmark.
+Leave runtime.csv, final_run, pending_rerun, sa_final, and current_figures unchanged. Do not rerun the benchmark.
 
 ## What the metric names mean
 

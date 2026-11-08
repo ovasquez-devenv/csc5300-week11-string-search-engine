@@ -57,6 +57,46 @@ def kmp_search_with_failure(text: str, pattern: str, failure: list[int]) -> list
     return positions
 
 
+def kmp_fallback_trace(text: str, pattern: str) -> list[dict[str, int | str]]:
+    """Show each mismatch that falls back through the failure table.
+
+    A record is written only when the pattern index is not zero and the
+    characters differ. from_index is the pattern index before the jump.
+    to_index is failure[from_index - 1], the index used after the fallback.
+    The text index stays on the same character. Matches that do not mismatch
+    are not listed. The returned positions still come from kmp_search.
+    """
+    n = len(text)
+    m = len(pattern)
+    if m == 0 or m > n:
+        return []
+    failure = compute_failure_function(pattern)
+    steps: list[dict[str, int | str]] = []
+    i = 0
+    j = 0
+    while i < n:
+        if pattern[j] == text[i]:
+            i += 1
+            j += 1
+            if j == m:
+                j = failure[j - 1]
+        else:
+            if j != 0:
+                steps.append(
+                    {
+                        "text_index": i,
+                        "text_char": text[i],
+                        "pattern_char": pattern[j],
+                        "from_index": j,
+                        "to_index": failure[j - 1],
+                    }
+                )
+                j = failure[j - 1]
+            else:
+                i += 1
+    return steps
+
+
 def kmp_search(text: str, pattern: str) -> list[int]:
     """Return starting positions of pattern in text.
 
