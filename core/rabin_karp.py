@@ -18,17 +18,27 @@ class RabinKarp:
         self.hasher = RollingHash(base=base, modulus=modulus)
         self.collisions = 0
         self.hash_hits = 0
+        self._pattern = ""
+        self._target = 0
+        self._power = 1
 
-    def search(self, text: str, pattern: str) -> list[int]:
-        """Return starting positions of pattern in text."""
+    def preprocess(self, pattern: str) -> None:
+        """Hash the pattern and store the window power. Does not scan the text."""
+        self._pattern = pattern
+        self._target = self.hasher.hash_string(pattern) if pattern else 0
+        self._power = self.hasher.window_power(len(pattern))
+
+    def search_prepared(self, text: str) -> list[int]:
+        """Slide the window using the hash from preprocess."""
+        pattern = self._pattern
         n = len(text)
         m = len(pattern)
-        if m == 0 or m > n:
-            return []
         self.collisions = 0
         self.hash_hits = 0
-        target = self.hasher.hash_string(pattern)
-        power = self.hasher.window_power(m)
+        if m == 0 or m > n:
+            return []
+        target = self._target
+        power = self._power
         window = self.hasher.hash_string(text[:m])
         positions: list[int] = []
         if window == target:
@@ -46,6 +56,11 @@ class RabinKarp:
                 else:
                     self.collisions += 1
         return positions
+
+    def search(self, text: str, pattern: str) -> list[int]:
+        """Return starting positions of pattern in text."""
+        self.preprocess(pattern)
+        return self.search_prepared(text)
 
     def search_multiple(self, text: str, patterns: list[str]) -> dict[str, list[int]]:
         """Search for many patterns of the same length in one pass.

@@ -32,7 +32,7 @@ StringSearchEngine(text).find(pattern, method) accepts kmp, rk, sa, or tree.
 
 ## Benchmark analysis
 
-The first table is the earlier run on this PC. One timer covered the whole call, with three repeats, seed 5300, and the pattern search. The mean is statistics.mean. The std is statistics.pstdev, the population kind, which divides by three. Those seven rows are in benchmarks/results/runtime.csv and stay as measured. That run left out the 1 MB trie.
+The first table is the earlier run on this PC. One timer covered the whole call, with three repeats, seed 5300, and the pattern search. The mean is statistics.mean. The std is statistics.pstdev, the population kind. Those seven rows are in benchmarks/results/runtime.csv and stay as measured. That run left out the 1 MB trie.
 
 | Dataset | Method | Mean seconds | Std seconds |
 | --- | --- | --- | --- |
@@ -46,7 +46,7 @@ The first table is the earlier run on this PC. One timer covered the whole call,
 
 The split rows were measured on this PC with Python 3.14.7, seed 5300, pattern search, and three repeats. 10 KB is 10000 characters and 1 MB is 1000000 characters. Setup and search used separate timers, with tracemalloc stopped. Memory came later. After garbage collection, tracemalloc stored the peak bytes Python allocated during that call. Setup peak includes the build. Search peak is the query only, with the structure already built. The byte std is the same population kind. A Task Manager figure is a different measurement.
 
-KMP setup is the failure table, and the search scans the text. Rabin Karp setup is the pattern hash and the window power, and the search slides the window. Suffix array setup builds the array, and the search is binary search. The LCP array stays in its own chart. Trie setup inserts every suffix, and every search lists starting positions. The 1000000 character trie was skipped, above the 50000 character limit, so that row has no times.
+KMP setup is the failure table, and the search scans the text. Rabin Karp setup is the pattern hash and the window power, and the search slides the window. Suffix array setup builds the array, and the search is binary search. The LCP array stays in its own chart. Trie setup inserts every suffix, and every search lists starting positions. The 1000000 character trie row is the earlier insertion trie's skip at 50000 characters. Ukkonen is the builder now, and those cells are not filled.
 
 Split times, in seconds:
 
@@ -102,7 +102,7 @@ Rabin Karp pays off when many patterns share a pass. One pattern is often no fas
 
 The suffix array fits a fixed text and many patterns. The O(n log n) build is the cost, and each later query is a binary search. The LCP array also feeds the plagiarism longest common substring.
 
-The trie answers substring and prefix questions from its edges. In the split table its 10 KB build is a little slower than the suffix array build, and the 1 MB trie was skipped. For one search it is the wrong tool.
+The trie answers substring and prefix questions from its edges. The 10 KB trie number is that earlier insertion trie, and the 1 MB trie row is that run's skip. For one search it is the wrong tool.
 
 ## Applications
 
@@ -114,7 +114,7 @@ autocomplete.py returns the top completions for a prefix, by count and then by t
 
 ## Conclusion
 
-KMP is the right default for one pattern. Rabin Karp is the right tool for a set of patterns. A suffix array or a compressed trie is the right tool when one text will be queried many times. The combined table and the split tables were measured on this PC. The 1 MB trie row records the 50000 character limit and has no time.
+KMP is the right default for one pattern. Rabin Karp is the right tool for a set of patterns. A suffix array or a compressed trie is the right tool when one text will be queried many times. The combined table and the split tables were measured on this PC. The 1 MB trie cell is that earlier skip, pending a Ukkonen rerun on this PC.
 
 ## Source
 

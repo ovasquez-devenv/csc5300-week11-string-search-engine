@@ -3,6 +3,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -149,6 +151,86 @@ def test_suffix_tree_prefix() -> None:
     tree = SuffixTree("BANANA")
     prefixes = tree.find_prefix("ANA")
     assert any(item.startswith("ANA") for item in prefixes)
+
+
+def test_engine_times_are_separated_and_averaged(monkeypatch) -> None:
+    import core.search_engine as engine_mod
+
+    values = iter([0.0, 0.2, 0.2, 0.5, 0.5, 0.9])
+    monkeypatch.setattr(engine_mod.time, "perf_counter", lambda: next(values))
+    positions, mean = engine_mod._repeat_search(lambda: [7, 8], 3)
+    assert positions == [7, 8]
+    assert mean == pytest.approx(0.3)
+
+
+def test_engine_kmp_builds_failure_table_once(monkeypatch) -> None:
+    calls = {"n": 0}
+    real = compute_failure_function
+
+    def wrapped(pattern: str) -> list[int]:
+        calls["n"] += 1
+        return real(pattern)
+
+    monkeypatch.setattr("core.kmp.compute_failure_function", wrapped)
+    result = StringSearchEngine("AAAAA").find("AA", method="kmp", repeats=5)
+    assert calls["n"] == 1
+    assert result.positions == [0, 1, 2, 3]
+    assert result.repeats == 5
+    assert result.match_count == 4
+
+
+def test_engine_rk_hashes_pattern_before_the_scan(monkeypatch) -> None:
+    from utils.rolling_hash import RollingHash
+
+    calls: list[str] = []
+    real = RollingHash.hash_string
+
+    def wrapped(self, value: str) -> int:
+        calls.append(value)
+        return real(self, value)
+
+    monkeypatch.setattr(RollingHash, "hash_string", wrapped)
+    result = StringSearchEngine("ABCABC").find("BC", method="rk", repeats=3)
+    assert result.positions == [1, 4]
+    assert calls.count("BC") == 1
+    assert calls.count("AB") == 3
+
+
+def test_engine_tree_positions_do_not_call_kmp(monkeypatch) -> None:
+    from core.kmp import KMPMatcher
+
+    calls = {"n": 0}
+    real = KMPMatcher.__init__
+
+    def wrapped(self, pattern: str) -> None:
+        calls["n"] += 1
+        real(self, pattern)
+
+    monkeypatch.setattr(KMPMatcher, "__init__", wrapped)
+    text = "BANANA"
+    result = StringSearchEngine(text).find("ANA", method="tree", repeats=4)
+    assert calls["n"] == 0
+    assert result.positions == kmp_search(text, "ANA")
+    assert result.match_count == 2
+    assert result.repeats == 4
+
+
+def test_engine_suffix_array_is_built_once(monkeypatch) -> None:
+    calls = {"n": 0}
+    real = build_suffix_array
+
+    def wrapped(text: str) -> list[int]:
+        calls["n"] += 1
+        return real(text)
+
+    monkeypatch.setattr("core.search_engine.build_suffix_array", wrapped)
+    engine = StringSearchEngine("BANANA")
+    first = engine.find("AN", method="sa", repeats=4)
+    second = engine.find("NA", method="sa", repeats=2)
+    assert calls["n"] == 1
+    assert first.preprocessing_time == second.preprocessing_time
+    assert first.positions == kmp_search("BANANA", "AN")
+    assert second.positions == kmp_search("BANANA", "NA")
 
 
 def test_engine_all_methods_agree() -> None:

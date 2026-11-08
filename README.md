@@ -32,29 +32,25 @@ py -3.14 -m pip install -r requirements.txt
 py -3.14 -m benchmarks.benchmark_search
 ```
 
-Run that last command as written. It uses seed 5300, a text of 10,000 characters, a text of 1,000,000 characters, and 3 repeats. It writes benchmarks/results/metrics.csv and benchmarks/results/collision_rates.csv, and it redraws the four PNG files in that folder. It leaves benchmarks/results/runtime.csv as the earlier combined timer run from this PC.
+The saved files in benchmarks/results are the earlier PC run. A new run is sent to benchmarks/results/pending_rerun when those files are present, so runtime.csv, metrics.csv, collision_rates.csv, and the four PNG files stay put.
 
-Safe default limits, so a longer text is skipped instead of run:
+The trie is now Ukkonen's compressed trie and is measured through 1,000,000 characters. KMP, Rabin Karp, and the suffix array keep that same limit. Only the trie rows in the saved metrics.csv are from the older insertion trie. Remeasure just the trie, without touching the saved files:
 
-| Method | Measured up to | At the default 1,000,000 character text |
-| --- | --- | --- |
-| KMP | 1,000,000 characters | measured |
-| Rabin Karp | 1,000,000 characters | measured |
-| suffix array | 1,000,000 characters | measured |
-| compressed trie | 50,000 characters | skipped |
+```
+py -3.14 -m benchmarks.benchmark_search --methods tree --output-dir benchmarks\results\pending_rerun
+```
 
-The trie limit is 50,000 because the build keeps a Python node for each piece of every suffix, and the script rebuilds it for the preprocessing samples and again for the memory samples. The 10,000 character text is under that limit. The 1,000,000 character trie is over it, so that row says skipped and gives the length and the limit. KMP, Rabin Karp, and the suffix array use a 1,000,000 character limit. The default command does not go past those limits. The medium suffix array is the slow part, because the script rebuilds it for the preprocessing samples and again for the memory samples.
+That uses seed 5300, 10,000 and 1,000,000 characters, and 3 repeats. The 1,000,000 character build is the slow part. Do not pass --allow-replace unless you intend to overwrite the saved measurements.
 
 Every search, including the trie, returns the list of starting positions. Chart titles name the generator, the seed, the pattern, and the quantity. The collision chart uses a separate random ACGT text. The LCP chart is one build on a 2,000 character englishish sample.
 
-## Put the new numbers in the report
+## After the trie rerun
 
-1. Run `py -3.14 -m benchmarks.benchmark_search` from the project folder. Wait until it prints the metrics path. Let it finish. The 1,000,000 character suffix array is the long part, and the memory repeats are slower because tracemalloc is on only for those samples. The trie row for that text will say skipped. That is the expected default.
-2. Open benchmarks/results/metrics.csv. Each row with status ok has a mean and a population standard deviation for preprocessing seconds, search seconds, and both tracemalloc peaks. Rabin Karp rows also have the collision rate.
-3. Open analysis/chapter10_report.md. Leave the combined time table as it is. Those seven numbers are the earlier run in runtime.csv.
-4. Under that table, add the new means from metrics.csv. Keep the column names next to the digits so a reader can see preprocessing, search, and the tracemalloc peak. Copy the digits from the CSV. For the skipped trie row, copy the note and leave the time cells blank.
-5. This run replaces the four PNG files. Read the title on each picture: it names the text, the seed, and the quantity. runtime_comparison.png shows preprocessing beside search on the small text from this run. The heatmap shows search latency for methods measured on both sizes, so the trie is absent there. The collision chart is the ACGT modulus sweep. The LCP chart is one 2,000 character sample. The collision numbers are also in collision_rates.csv.
-6. Save the report, both CSV files, and the four PNG files together so the words match the files.
+1. Run the tree command above from the project folder. Wait until it prints the pending_rerun path.
+2. Open benchmarks/results/pending_rerun/metrics.csv. It should contain a 10000 character tree row and a 1000000 character tree row, both with status ok, and the note should say ukkonen-v1.
+3. In analysis/chapter10_report.md, leave the first combined table and the KMP, Rabin Karp, suffix array, and collision numbers as they are. Replace only the trie lines that are labeled as the earlier insertion trie. Copy the new setup mean, setup std, search mean, search std, and both peak byte pairs from the pending file. Say those cells are ukkonen-v1 measured on this PC.
+4. The bar chart in benchmarks/results still includes the earlier trie. The new bar chart, if you want one picture with all four methods, requires a full rerun into pending_rerun with no --methods filter. Do not copy that picture over the saved PNG until you mean to replace it. The heatmap, collision chart, and LCP chart in benchmarks/results do not use the trie and can stay.
+5. Do not edit runtime.csv, the saved metrics.csv, or collision_rates.csv while copying numbers into the report.
 
 ## What the metric names mean
 

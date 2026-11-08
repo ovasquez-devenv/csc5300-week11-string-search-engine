@@ -33,17 +33,12 @@ def compute_failure_function(pattern: str) -> list[int]:
     return failure
 
 
-def kmp_search(text: str, pattern: str) -> list[int]:
-    """Return starting positions of pattern in text.
-
-    Empty pattern returns an empty list. Pattern longer than text returns
-    an empty list. Time is O(n + m).
-    """
+def kmp_search_with_failure(text: str, pattern: str, failure: list[int]) -> list[int]:
+    """Scan text with a failure table that was already built."""
     n = len(text)
     m = len(pattern)
     if m == 0 or m > n:
         return []
-    failure = compute_failure_function(pattern)
     positions: list[int] = []
     i = 0
     j = 0
@@ -62,6 +57,17 @@ def kmp_search(text: str, pattern: str) -> list[int]:
     return positions
 
 
+def kmp_search(text: str, pattern: str) -> list[int]:
+    """Return starting positions of pattern in text.
+
+    Empty pattern returns an empty list. Pattern longer than text returns
+    an empty list. Time is O(n + m).
+    """
+    if len(pattern) == 0 or len(pattern) > len(text):
+        return []
+    return kmp_search_with_failure(text, pattern, compute_failure_function(pattern))
+
+
 class KMPMatcher:
     """Reusable KMP matcher. Precomputes the failure table once."""
 
@@ -70,4 +76,4 @@ class KMPMatcher:
         self.failure = compute_failure_function(pattern)
 
     def search(self, text: str) -> list[int]:
-        return kmp_search(text, self.pattern)
+        return kmp_search_with_failure(text, self.pattern, self.failure)

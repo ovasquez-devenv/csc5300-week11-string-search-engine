@@ -14,10 +14,10 @@ From the project root on Windows, with Python 3.14:
     py -3.14 -m benchmarks.benchmark_search
 
 That command uses seed 5300, a 10,000 character text, a 1,000,000 character
-text, and 3 repeats. KMP, Rabin Karp, and the suffix array run at both
-lengths. The compressed trie runs only up to 50,000 characters, so the
-1,000,000 character trie row is skipped. The script writes metrics.csv,
-collision_rates.csv, and the four PNG charts under benchmarks/results.
+text, and 3 repeats. All four methods, including the Ukkonen trie, run at
+both lengths. If benchmarks/results already holds saved measurements, the
+run is written to benchmarks/results/pending_rerun instead of replacing
+those files.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ DEFAULT_SEED = SEED
 DEFAULT_REPEATS = 3
 DEFAULT_SMALL = 10_000
 DEFAULT_MEDIUM = 1_000_000
-DEFAULT_TREE_MAX_CHARS = 50_000
+DEFAULT_TREE_MAX_CHARS = 1_000_000
 DEFAULT_TEXT_MAX_CHARS = 1_000_000
 DEFAULT_PATTERN = "search"
 DEFAULT_MODULUS = 1_000_000_007
@@ -65,6 +65,12 @@ CHART_FILES = (
     "collision_analysis.png",
     "sa_lcp_stats.png",
     "heatmap_dataset_sizes.png",
+)
+PROTECTED_RESULTS = (
+    "runtime.csv",
+    "metrics.csv",
+    "collision_rates.csv",
+    *CHART_FILES,
 )
 
 METRIC_FIELDS = [
@@ -140,7 +146,7 @@ def query(method: str, text: str, pattern: str, state):
     if method == "sa":
         return binary_search(text, state, pattern)
     if method == "tree":
-        return _tree_positions(state, pattern)
+        return state.find_positions(pattern)
     raise ValueError(f"Unknown method: {method}")
 
 
@@ -196,54 +202,14 @@ def _rk_search(text: str, pattern: str, state) -> list[int]:
     return positions
 
 
-def _tree_positions(tree: SuffixTree, pattern: str) -> list[int]:
-    """Return every starting position of pattern in the compressed trie.
-
-    The walk uses the edge index ranges already stored on the nodes. It does
-    not call find_substring, which only answers yes or no. Positions are
-    sorted so the list matches the other search methods.
-    """
-    text = tree.text
-    n = len(text)
-    m = len(pattern)
-    if m == 0 or m > n:
-        return []
-    node = tree.root
-    depth = 0
-    i = 0
-    while i < m:
-        child = node.children.get(pattern[i])
-        if child is None:
-            return []
-        label_len = child.end - child.start
-        k = 0
-        while k < label_len and i < m:
-            if text[child.start + k] != pattern[i]:
-                return []
-            k += 1
-            i += 1
-        depth += label_len
-        node = child
-    positions: list[int] = []
-    stack = [(node, depth)]
-    while stack:
-        current, current_depth = stack.pop()
-        if current.is_terminal:
-            positions.append(n - current_depth)
-        for nxt in current.children.values():
-            stack.append((nxt, current_depth + (nxt.end - nxt.start)))
-    positions.sort()
-    return positions
-
-
 def method_character_limit(
     method: str, *, tree_max_chars: int, text_max_chars: int
 ) -> int:
     """Largest text length this method will measure.
 
-    The trie limit is lower because the build stores a Python node for every
-    piece of every suffix and the default run repeats that build. KMP, Rabin
-    Karp, and the suffix array share the larger text limit.
+    The Ukkonen trie is allowed through the default medium size. A longer
+    text, including the optional 100 MB size, is skipped unless the limit is
+    raised. KMP, Rabin Karp, and the suffix array share the text limit.
     """
     if method == "tree":
         return tree_max_chars
@@ -341,8 +307,9 @@ def _method_note(method: str) -> str:
         )
     if method == "tree":
         return (
-            "Search lists every starting position in the trie. "
-            "The other methods list starting positions too."
+            f"Ukkonen compressed trie ({SuffixTree.BUILD_ID}). "
+            "Search lists every starting position. "
+            "This builder is not the earlier insertion trie in the saved metrics.csv."
         )
     if method == "kmp":
         return "Preprocess times the failure table. Search times the text scan."
@@ -640,6 +607,8 @@ def run(
     collision_text_size: int = DEFAULT_COLLISION_TEXT_SIZE,
     lcp_sample_size: int = DEFAULT_LCP_SAMPLE_SIZE,
     collision_moduli: tuple[int, ...] = COLLISION_MODULI,
+    methods: tuple[str, ...] = METHODS,
+    allow_replace: bool = False,
 ) -> dict[str, Path]:
     if repeats < 1:
         raise ValueError("repeats must be at least 1")
@@ -650,13 +619,18 @@ def run(
     if collision_text_size < 1 or lcp_sample_size < 1:
         raise ValueError("chart sample sizes must be positive")
 
-    destination = RESULTS if output_dir is None else Path(output_dir)
-    destination.mkdir(parents=True, exist_ok=True)
+    unknown = [name for name in methods if name not in METHODS]
+    if unknown or not methods:
+        raise ValueError("methods must be chosen from kmp, rk, sa, tree")
+    destination = resolve_output_dir(
+        RESULTS if output_dir is None else Path(output_dir),
+        allow_replace=allow_replace,
+    )
     datasets = (("small", small), ("medium", medium))
     rows: list[dict[str, str]] = []
     for label, size in datasets:
         text = englishish(size, seed=seed)
-        for method in METHODS:
+        for method in methods:
             rows.append(
                 measure_method(
                     label,
@@ -672,34 +646,50 @@ def run(
             )
     metrics_path = destination / "metrics.csv"
     _write_csv(metrics_path, METRIC_FIELDS, rows)
-
-    collision_rows = measure_collision_table(
-        collision_text_size, seed, repeats, collision_moduli
-    )
-    collision_path = destination / "collision_rates.csv"
-    _write_csv(collision_path, COLLISION_FIELDS, collision_rows)
-
-    chart_paths = [destination / name for name in CHART_FILES]
+    written: dict[str, Path] = {"metrics": metrics_path}
+    side_charts = set(methods) == set(METHODS)
+    if side_charts:
+        collision_rows = measure_collision_table(
+            collision_text_size, seed, repeats, collision_moduli
+        )
+        collision_path = destination / "collision_rates.csv"
+        _write_csv(collision_path, COLLISION_FIELDS, collision_rows)
+        written["collisions"] = collision_path
+        _draw_collision_chart(destination / CHART_FILES[1], collision_rows, seed, repeats)
+        _draw_lcp_chart(destination / CHART_FILES[2], lcp_sample_size, seed)
+        written["collision_analysis"] = destination / CHART_FILES[1]
+        written["sa_lcp_stats"] = destination / CHART_FILES[2]
     _draw_runtime_chart(
-        chart_paths[0], _completed(rows, "small"), small, seed, repeats, pattern
+        destination / CHART_FILES[0], _completed(rows, "small"), small, seed, repeats, pattern
     )
-    _draw_collision_chart(chart_paths[1], collision_rows, seed, repeats)
-    _draw_lcp_chart(chart_paths[2], lcp_sample_size, seed)
-    _draw_heatmap(chart_paths[3], rows, list(datasets), seed, repeats, pattern)
+    _draw_heatmap(destination / CHART_FILES[3], rows, list(datasets), seed, repeats, pattern)
+    written["runtime_comparison"] = destination / CHART_FILES[0]
+    written["heatmap"] = destination / CHART_FILES[3]
     print(f"Wrote {metrics_path}")
-    print(f"Wrote {collision_path}")
-    print("Left runtime.csv unchanged.")
+    if "collisions" in written:
+        print(f"Wrote {written['collisions']}")
+    print("Saved PC measurement files were not replaced.")
     for row in rows:
         if row["status"] == "skipped":
             print(f"Skipped {row['dataset']} {row['method']}: {row['note']}")
-    return {
-        "metrics": metrics_path,
-        "collisions": collision_path,
-        "runtime_comparison": chart_paths[0],
-        "collision_analysis": chart_paths[1],
-        "sa_lcp_stats": chart_paths[2],
-        "heatmap": chart_paths[3],
-    }
+    return written
+
+
+def resolve_output_dir(destination: Path, allow_replace: bool) -> Path:
+    """Keep saved PC measurements in place unless replacement is requested."""
+    destination = Path(destination)
+    if allow_replace:
+        destination.mkdir(parents=True, exist_ok=True)
+        return destination
+    protected = [name for name in PROTECTED_RESULTS if (destination / name).exists()]
+    if not protected:
+        destination.mkdir(parents=True, exist_ok=True)
+        return destination
+    pending = destination / "pending_rerun"
+    pending.mkdir(parents=True, exist_ok=True)
+    print("Left these saved files unchanged: " + ", ".join(protected))
+    print(f"Writing this run to {pending}")
+    return pending
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -719,6 +709,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--text-max-chars", type=int, default=DEFAULT_TEXT_MAX_CHARS)
     parser.add_argument("--collision-text-size", type=int, default=DEFAULT_COLLISION_TEXT_SIZE)
     parser.add_argument("--lcp-sample-size", type=int, default=DEFAULT_LCP_SAMPLE_SIZE)
+    parser.add_argument(
+        "--methods",
+        default="kmp,rk,sa,tree",
+        help="Comma separated subset. Use tree to remeasure only the trie.",
+    )
+    parser.add_argument(
+        "--allow-replace",
+        action="store_true",
+        help="Write into a folder that already holds saved PC measurements.",
+    )
     return parser.parse_args(argv)
 
 
@@ -735,7 +735,16 @@ def main(argv: list[str] | None = None) -> None:
         text_max_chars=args.text_max_chars,
         collision_text_size=args.collision_text_size,
         lcp_sample_size=args.lcp_sample_size,
+        methods=_parse_methods(args.methods),
+        allow_replace=args.allow_replace,
     )
+
+
+def _parse_methods(text: str) -> tuple[str, ...]:
+    names = tuple(part.strip() for part in text.split(",") if part.strip())
+    if not names or any(name not in METHODS for name in names):
+        raise ValueError("methods must be chosen from kmp, rk, sa, tree")
+    return names
 
 
 if __name__ == "__main__":

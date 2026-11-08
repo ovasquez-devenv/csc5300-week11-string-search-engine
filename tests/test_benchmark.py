@@ -64,8 +64,8 @@ def test_defaults_cover_required_sizes() -> None:
     assert DEFAULT_REPEATS == 3
     assert DEFAULT_SMALL == 10_000
     assert 1_000_000 <= DEFAULT_MEDIUM <= 5_000_000
-    assert DEFAULT_SMALL <= DEFAULT_TREE_MAX_CHARS < DEFAULT_MEDIUM
-    assert DEFAULT_TREE_MAX_CHARS == 50_000
+    assert DEFAULT_TREE_MAX_CHARS >= DEFAULT_MEDIUM
+    assert DEFAULT_TREE_MAX_CHARS == 1_000_000
     assert DEFAULT_TEXT_MAX_CHARS == DEFAULT_MEDIUM
     assert method_character_limit("tree", tree_max_chars=50_000, text_max_chars=1_000_000) == 50_000
     assert method_character_limit("sa", tree_max_chars=50_000, text_max_chars=1_000_000) == 1_000_000
@@ -227,9 +227,10 @@ def test_smoke_run_writes_separated_metrics(tmp_path: Path) -> None:
     kmp_rows = [row for row in ok_rows if row["method"] == "kmp"]
     assert all(row["rk_collision_rate_mean"] == "" for row in kmp_rows)
     for name in CHART_FILES:
-        chart = tmp_path / name
+        chart = paths["metrics"].parent / name
         assert chart.is_file()
         assert chart.stat().st_size > 1000
+        assert not (tmp_path / name).exists()
     with paths["collisions"].open(newline="", encoding="utf-8") as handle:
         collision_rows = list(csv.DictReader(handle))
     assert list(collision_rows[0]) == COLLISION_FIELDS
@@ -305,7 +306,7 @@ def test_parse_args_defaults_match_assignment() -> None:
     assert args.medium == 1_000_000
     assert args.repeats == 3
     assert args.seed == 5300
-    assert args.tree_max_chars == 50_000
+    assert args.tree_max_chars == 1_000_000
     assert args.text_max_chars == 1_000_000
 
 
@@ -365,6 +366,28 @@ def test_chart_titles_name_measurement_and_source() -> None:
     heatmap = heatmap_chart_title(5300, 3, "search")
     assert "search seconds" in heatmap
     assert "every size" in heatmap
+
+
+def test_saved_measurement_files_are_not_replaced(tmp_path: Path) -> None:
+    sentinel = "keep-omar-metrics\n"
+    (tmp_path / "metrics.csv").write_text(sentinel, encoding="utf-8")
+    (tmp_path / "runtime.csv").write_text("keep-runtime\n", encoding="utf-8")
+    paths = run(
+        output_dir=tmp_path,
+        small=40,
+        medium=80,
+        repeats=1,
+        methods=("kmp",),
+        tree_max_chars=1_000_000,
+        text_max_chars=1_000_000,
+        collision_text_size=80,
+        lcp_sample_size=20,
+    )
+    assert (tmp_path / "metrics.csv").read_text(encoding="utf-8") == sentinel
+    assert (tmp_path / "runtime.csv").read_text(encoding="utf-8") == "keep-runtime\n"
+    assert paths["metrics"].parent == tmp_path / "pending_rerun"
+    assert paths["metrics"].is_file()
+    assert "collisions" not in paths
 
 
 def test_run_rejects_bad_repeats(tmp_path: Path) -> None:
