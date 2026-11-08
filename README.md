@@ -20,10 +20,33 @@ From the project root:
 
 ```
 python -m pytest tests
-python -m benchmarks.benchmark_search
+py -3.14 -m benchmarks.benchmark_search
 ```
 
-The benchmark uses seed 5300 and writes CSV plus four PNG files under benchmarks/results.
+On Windows, use Python 3.14 from the project folder in PowerShell:
+
+```
+py -3.14 -m venv .venv
+.venv\Scripts\Activate.ps1
+py -3.14 -m pip install -r requirements.txt
+py -3.14 -m benchmarks.benchmark_search
+```
+
+The current PC measurement is benchmarks/results/final_run. benchmarks/results/runtime.csv is the older combined run. benchmarks/results/pending_rerun is the earlier split run. A benchmark refuses to write into a folder that already has measurement files, and it does not create a nested folder. Do not pass --allow-replace.
+
+Every search, including the trie, returns the list of starting positions. Chart titles name the generator, the seed, the pattern, and the quantity. The collision chart uses a separate random ACGT text. The LCP chart is one build on a 2,000 character englishish sample.
+
+## Charts already measured
+
+The report uses benchmarks/results/final_run/metrics.csv, collision_rates.csv, and the four PNG files in that folder. Leave runtime.csv, pending_rerun, and the older files directly in benchmarks/results unchanged. Do not rerun the benchmark.
+
+## What the metric names mean
+
+Preprocessing time is the setup before the lookup. Search latency is the lookup after that setup already exists. The mean is the average of the three repeats. The standard deviation is the population kind from statistics.pstdev, the same kind already used in runtime.csv. A small standard deviation means the repeats landed close together.
+
+The tracemalloc peak is the highest number of bytes Python allocated during that one call. The preprocessing peak includes the build. The search peak is the lookup. Quote the column name when you write the number down, because a Task Manager reading is a different measurement.
+
+The Rabin Karp collision rate is the share of hash hits that failed the character check. The characters are still compared, so a collision is extra work and the list of matches stays correct. On the main texts the modulus is 1000000007, so that rate can sit at 0. The collision chart uses smaller moduli, which lets the rate rise.
 
 ## Layout
 
